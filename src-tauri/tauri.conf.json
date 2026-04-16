@@ -48,8 +48,5 @@
       }
     }
   },
-  "plugins": {
-    "dialog": {},
-    "clipboard-manager": {}
-  }
+  "plugins": {}
 }
