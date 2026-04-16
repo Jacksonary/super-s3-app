@@ -4,6 +4,8 @@
 
 基于 [Tauri 2](https://v2.tauri.app/) + Rust + React 构建，无需 Docker、无需部署服务器，双击即用。
 
+**仓库地址**：[GitHub](https://github.com/Jacksonary/super-s3-app) | [Gitee](https://gitee.com/weiguoliu/super-s3-app)
+
 ## 功能特性
 
 ### 多账号管理
@@ -34,7 +36,7 @@
 
 ## 下载安装
 
-前往 [Releases](https://github.com/Jacksonary/super-s3-app/releases) 页面下载对应平台的安装包：
+前往 [GitHub Releases](https://github.com/Jacksonary/super-s3-app/releases) 或 [Gitee Releases](https://gitee.com/weiguoliu/super-s3-app/releases) 页面下载对应平台的安装包：
 
 | 平台 | 格式 |
 |------|------|

@@ -25,6 +25,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to: ${VERSION}"
+
+          # package.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+
+          # src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+
+          # src-tauri/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -62,5 +77,88 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Super S3 ${{ github.ref_name }}"
           releaseBody: "See the assets to download the installer for your platform."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
+
+  sync-to-gitee:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get GitHub Release info
+        id: gh_release
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          # Wait for draft release to be fully created
+          sleep 10
+
+          # Get the release by tag (include drafts)
+          RELEASE_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases")
+
+          # Find the release matching this tag
+          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r ".[] | select(.tag_name==\"${TAG}\") | .id")
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+          echo "Found GitHub Release ID: ${RELEASE_ID}"
+
+      - name: Download GitHub Release assets
+        run: |
+          mkdir -p assets
+          ASSETS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.gh_release.outputs.release_id }}/assets")
+
+          echo "$ASSETS_JSON" | jq -r '.[] | "\(.id) \(.name)"' | while read -r id name; do
+            echo "Downloading: ${name}"
+            curl -sL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/octet-stream" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/assets/${id}" \
+              -o "assets/${name}"
+          done
+
+          echo "Downloaded assets:"
+          ls -lh assets/
+
+      - name: Create Gitee Release and upload assets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          TAG="${{ steps.gh_release.outputs.tag }}"
+          OWNER="weiguoliu"
+          REPO="super-s3-app"
+
+          # Create Gitee Release
+          RESPONSE=$(curl -s -X POST \
+            "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"access_token\": \"${GITEE_TOKEN}\",
+              \"tag_name\": \"${TAG}\",
+              \"name\": \"Super S3 ${TAG}\",
+              \"body\": \"See the assets to download the installer for your platform.\",
+              \"prerelease\": false
+            }")
+
+          RELEASE_ID=$(echo "$RESPONSE" | jq -r '.id')
+          echo "Created Gitee Release ID: ${RELEASE_ID}"
+
+          if [ "$RELEASE_ID" = "null" ] || [ -z "$RELEASE_ID" ]; then
+            echo "Failed to create Gitee Release:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          # Upload assets to Gitee Release
+          for file in assets/*; do
+            [ -f "$file" ] || continue
+            filename=$(basename "$file")
+            echo "Uploading to Gitee: ${filename}"
+            curl -s -X POST \
+              "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/attach_files" \
+              -H "Content-Type: multipart/form-data" \
+              -F "access_token=${GITEE_TOKEN}" \
+              -F "file=@${file}"
+            echo ""
+          done
+
+          echo "Gitee Release sync completed!"
