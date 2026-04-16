@@ -119,3 +119,9 @@ cargo tauri build
 | 后端 | Rust + aws-sdk-s3 |
 | 前端 | React 18 + TypeScript + Ant Design 5 |
 | 构建 | Vite 5 + Cargo |
+
+---
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。

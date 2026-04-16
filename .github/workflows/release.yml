@@ -134,6 +134,7 @@ jobs:
             -d "{
               \"access_token\": \"${GITEE_TOKEN}\",
               \"tag_name\": \"${TAG}\",
+              \"target_commitish\": \"${GITHUB_SHA}\",
               \"name\": \"Super S3 ${TAG}\",
               \"body\": \"See the assets to download the installer for your platform.\",
               \"prerelease\": false
