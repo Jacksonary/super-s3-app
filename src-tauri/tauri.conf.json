@@ -38,7 +38,8 @@
       },
       "nsis": {
         "languages": ["English", "SimpChinese"],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installMode": "both"
       }
     },
     "linux": {
