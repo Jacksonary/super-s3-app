@@ -149,16 +149,24 @@ jobs:
             exit 1
           fi
 
-          # Upload assets to Gitee Release
+          # Upload assets to Gitee Release (Gitee has a 100MB per-file limit)
+          MAX_SIZE=$((100 * 1024 * 1024))
           for file in assets/*; do
             [ -f "$file" ] || continue
             filename=$(basename "$file")
-            echo "Uploading to Gitee: ${filename}"
-            curl -s -X POST \
+            filesize=$(stat -c%s "$file")
+            if [ "$filesize" -gt "$MAX_SIZE" ]; then
+              echo "Skipping ${filename} ($(( filesize / 1024 / 1024 ))MB exceeds Gitee 100MB limit)"
+              continue
+            fi
+            echo "Uploading to Gitee: ${filename} ($(( filesize / 1024 / 1024 ))MB)"
+            UPLOAD_RESPONSE=$(curl -s --fail --retry 2 --retry-delay 5 \
+              -X POST \
               "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/attach_files" \
               -H "Content-Type: multipart/form-data" \
               -F "access_token=${GITEE_TOKEN}" \
-              -F "file=@${file}"
+              -F "file=@${file}")
+            echo "$UPLOAD_RESPONSE"
             echo ""
           done
 
