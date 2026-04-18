@@ -92,7 +92,14 @@ export function DetailDrawer({ open, target, item, onClose }: Props) {
     api.meta(accountId, bucket, item.key)
       .then((m) => {
         setMeta(m);
-        const pt = detectPreviewType(item, m.content_type);
+        return m;
+      })
+      .catch(() => {
+        // head_object failed (e.g. provider incompatibility) — fall back to list info
+        return null;
+      })
+      .then((m) => {
+        const pt = detectPreviewType(item, m?.content_type);
         if (pt === "image" || pt === "audio" || pt === "video") {
           return api.presign(accountId, bucket, item.key).then(({ url }) => {
             setPreviewUrl(url);
@@ -100,8 +107,8 @@ export function DetailDrawer({ open, target, item, onClose }: Props) {
           });
         }
       })
-      .catch((e: unknown) => {
-        message.error(`Failed to load metadata: ${e}`);
+      .catch(() => {
+        // presign also failed — ignore, preview just won't load
       })
       .finally(() => setMetaLoading(false));
   }, [open, item, accountId, bucket]);
