@@ -105,11 +105,30 @@ pub fn save_config(accounts: &[AccountConfig]) -> Result<(), String> {
     Ok(())
 }
 
+/// Check if the endpoint is Qiniu Kodo (needs V1 list fallback).
+pub fn is_qiniu(endpoint: &str) -> bool {
+    let ep = endpoint.to_lowercase();
+    ep.contains("qiniucs") || ep.contains("qbox")
+}
+
+/// Get account config by index.
+pub fn get_account(account_idx: usize) -> Result<AccountConfig, String> {
+    let accounts = load_config()?;
+    accounts
+        .into_iter()
+        .nth(account_idx)
+        .ok_or_else(|| "Account not found".to_string())
+}
+
 /// Get client for account by index.
 pub fn get_client(account_idx: usize) -> Result<aws_sdk_s3::Client, String> {
-    let accounts = load_config()?;
-    let account = accounts
-        .get(account_idx)
-        .ok_or_else(|| "Account not found".to_string())?;
-    Ok(make_client(account))
+    let account = get_account(account_idx)?;
+    Ok(make_client(&account))
+}
+
+/// Get client together with the endpoint string.
+pub fn get_client_with_endpoint(account_idx: usize) -> Result<(aws_sdk_s3::Client, String), String> {
+    let account = get_account(account_idx)?;
+    let endpoint = account.endpoint.clone();
+    Ok((make_client(&account), endpoint))
 }

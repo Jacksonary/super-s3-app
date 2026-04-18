@@ -19,8 +19,10 @@ pub fn run() {
             commands::objects::search_objects,
             commands::objects::delete_objects,
             commands::objects::create_folder,
+            commands::objects::rename_object,
             // Transfer
             commands::transfer::download_object,
+            commands::transfer::batch_download,
             commands::transfer::upload_object,
             commands::transfer::upload_object_bytes,
             commands::transfer::presign_object,

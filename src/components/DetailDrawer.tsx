@@ -20,11 +20,11 @@ import {
   EditOutlined,
   FullscreenOutlined,
 } from "@ant-design/icons";
-import dayjs from "dayjs";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../api";
 import type { ObjectItem, ObjectMeta, SelectedBucket } from "../types";
+import { fmtSize, fmtDate } from "../utils";
 
 const { Text } = Typography;
 
@@ -56,19 +56,6 @@ function detectPreviewType(item: ObjectItem, contentType?: string | null): Previ
   if (ct.startsWith("video/")  || VIDEO_EXT.has(ext)) return "video";
   if (ct.startsWith("text/")   || ct.includes("json") || ct.includes("xml") || TEXT_EXT.has(ext)) return "text";
   return "none";
-}
-
-function fmtSize(bytes: number | null): string {
-  if (bytes === null) return "—";
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return dayjs(iso).format("YYYY-MM-DD HH:mm:ss");
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -389,11 +376,11 @@ export function DetailDrawer({ open, target, item, onClose }: Props) {
               {meta?.content_type ? <Tag>{meta.content_type}</Tag> : "—"}
             </Descriptions.Item>
             <Descriptions.Item label="Last Modified">
-              {fmtDate(meta?.last_modified ?? item.last_modified)}
+              {fmtDate(meta?.last_modified ?? item.last_modified, "YYYY-MM-DD HH:mm:ss")}
             </Descriptions.Item>
             {meta?.expires && (
               <Descriptions.Item label="Expires">
-                <Text type="warning">{fmtDate(meta.expires)}</Text>
+                <Text type="warning">{fmtDate(meta.expires, "YYYY-MM-DD HH:mm:ss")}</Text>
               </Descriptions.Item>
             )}
             <Descriptions.Item label="ETag">

@@ -1,6 +1,80 @@
 use crate::s3client;
 use crate::types::{DeleteError, DeleteResult, ListResult, ObjectItem, SearchResult};
 
+/// Helper: list objects with V1 fallback for Qiniu Kodo.
+async fn list_objects_compat(
+    client: &aws_sdk_s3::Client,
+    endpoint: &str,
+    bucket: &str,
+    prefix: &str,
+    delimiter: &str,
+    max_keys: i32,
+    continuation_token: Option<&str>,
+) -> Result<ListCompatResult, String> {
+    if s3client::is_qiniu(endpoint) {
+        let mut req = client.list_objects().bucket(bucket).prefix(prefix).max_keys(max_keys);
+        if !delimiter.is_empty() {
+            req = req.delimiter(delimiter);
+        }
+        if let Some(ct) = continuation_token {
+            if !ct.is_empty() {
+                req = req.marker(ct);
+            }
+        }
+        let resp = req.send().await.map_err(|e| format!("Failed to list objects: {e}"))?;
+
+        let contents = resp.contents().to_vec();
+        let common_prefixes = resp.common_prefixes().to_vec();
+        let is_truncated = resp.is_truncated().unwrap_or(false);
+        let next_marker = resp
+            .next_marker()
+            .map(|s| s.to_string())
+            .or_else(|| {
+                if is_truncated {
+                    contents.last().and_then(|o| o.key().map(|s| s.to_string()))
+                } else {
+                    None
+                }
+            });
+        let key_count = (contents.len() + common_prefixes.len()) as i32;
+
+        Ok(ListCompatResult {
+            contents,
+            common_prefixes,
+            next_continuation_token: next_marker,
+            is_truncated,
+            key_count,
+        })
+    } else {
+        let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix).max_keys(max_keys);
+        if !delimiter.is_empty() {
+            req = req.delimiter(delimiter);
+        }
+        if let Some(ct) = continuation_token {
+            if !ct.is_empty() {
+                req = req.continuation_token(ct);
+            }
+        }
+        let resp = req.send().await.map_err(|e| format!("Failed to list objects: {e}"))?;
+
+        Ok(ListCompatResult {
+            contents: resp.contents().to_vec(),
+            common_prefixes: resp.common_prefixes().to_vec(),
+            next_continuation_token: resp.next_continuation_token().map(|s| s.to_string()),
+            is_truncated: resp.is_truncated().unwrap_or(false),
+            key_count: resp.key_count().unwrap_or(0),
+        })
+    }
+}
+
+struct ListCompatResult {
+    contents: Vec<aws_sdk_s3::types::Object>,
+    common_prefixes: Vec<aws_sdk_s3::types::CommonPrefix>,
+    next_continuation_token: Option<String>,
+    is_truncated: bool,
+    key_count: i32,
+}
+
 #[tauri::command]
 pub async fn list_objects(
     account_idx: usize,
@@ -10,34 +84,24 @@ pub async fn list_objects(
     continuation_token: Option<String>,
     limit: Option<i32>,
 ) -> Result<ListResult, String> {
-    let client = s3client::get_client(account_idx)?;
+    let (client, endpoint) = s3client::get_client_with_endpoint(account_idx)?;
     let prefix = prefix.unwrap_or_default();
     let delimiter = delimiter.unwrap_or_else(|| "/".to_string());
     let limit = limit.unwrap_or(200);
 
-    let mut req = client
-        .list_objects_v2()
-        .bucket(&bucket)
-        .prefix(&prefix)
-        .max_keys(limit);
+    let resp = list_objects_compat(
+        &client,
+        &endpoint,
+        &bucket,
+        &prefix,
+        &delimiter,
+        limit,
+        continuation_token.as_deref(),
+    )
+    .await?;
 
-    if !delimiter.is_empty() {
-        req = req.delimiter(&delimiter);
-    }
-    if let Some(ref token) = continuation_token {
-        if !token.is_empty() {
-            req = req.continuation_token(token);
-        }
-    }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("Failed to list objects: {e}"))?;
-
-    // Folders from CommonPrefixes
     let mut items: Vec<ObjectItem> = resp
-        .common_prefixes()
+        .common_prefixes
         .iter()
         .filter_map(|cp| {
             let key = cp.prefix()?.to_string();
@@ -54,10 +118,8 @@ pub async fn list_objects(
         })
         .collect();
 
-    // Files from Contents
-    for obj in resp.contents() {
+    for obj in &resp.contents {
         let key = obj.key().unwrap_or_default().to_string();
-        // Skip placeholder folder object
         if key == prefix {
             continue;
         }
@@ -80,9 +142,9 @@ pub async fn list_objects(
         prefix,
         delimiter,
         items,
-        next_continuation_token: resp.next_continuation_token().map(|s| s.to_string()),
-        is_truncated: resp.is_truncated().unwrap_or(false),
-        key_count: resp.key_count().unwrap_or(0),
+        next_continuation_token: resp.next_continuation_token,
+        is_truncated: resp.is_truncated,
+        key_count: resp.key_count,
     })
 }
 
@@ -95,30 +157,24 @@ pub async fn search_objects(
     limit: Option<i32>,
     continuation_token: Option<String>,
 ) -> Result<SearchResult, String> {
-    let client = s3client::get_client(account_idx)?;
+    let (client, endpoint) = s3client::get_client_with_endpoint(account_idx)?;
     let prefix = prefix.unwrap_or_default();
     let search_prefix = format!("{}{}", prefix, q);
     let limit = limit.unwrap_or(200);
 
-    let mut req = client
-        .list_objects_v2()
-        .bucket(&bucket)
-        .prefix(&search_prefix)
-        .max_keys(limit);
-
-    if let Some(ref token) = continuation_token {
-        if !token.is_empty() {
-            req = req.continuation_token(token);
-        }
-    }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("Failed to search objects: {e}"))?;
+    let resp = list_objects_compat(
+        &client,
+        &endpoint,
+        &bucket,
+        &search_prefix,
+        "",
+        limit,
+        continuation_token.as_deref(),
+    )
+    .await?;
 
     let items: Vec<ObjectItem> = resp
-        .contents()
+        .contents
         .iter()
         .map(|obj| {
             let key = obj.key().unwrap_or_default().to_string();
@@ -139,8 +195,8 @@ pub async fn search_objects(
 
     Ok(SearchResult {
         items,
-        is_truncated: resp.is_truncated().unwrap_or(false),
-        next_continuation_token: resp.next_continuation_token().map(|s| s.to_string()),
+        is_truncated: resp.is_truncated,
+        next_continuation_token: resp.next_continuation_token,
     })
 }
 
@@ -221,4 +277,37 @@ pub async fn create_folder(
         .map_err(|e| format!("Failed to create folder: {e}"))?;
 
     Ok(serde_json::json!({ "success": true, "key": folder_key }))
+}
+
+#[tauri::command]
+pub async fn rename_object(
+    account_idx: usize,
+    bucket: String,
+    src_key: String,
+    dst_key: String,
+) -> Result<serde_json::Value, String> {
+    let client = s3client::get_client(account_idx)?;
+
+    client
+        .copy_object()
+        .bucket(&bucket)
+        .key(&dst_key)
+        .copy_source(format!(
+            "{}/{}",
+            bucket,
+            urlencoding::encode(&src_key)
+        ))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to copy object: {e}"))?;
+
+    client
+        .delete_object()
+        .bucket(&bucket)
+        .key(&src_key)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete old object: {e}"))?;
+
+    Ok(serde_json::json!({ "success": true, "src": src_key, "dst": dst_key }))
 }

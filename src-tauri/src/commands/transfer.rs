@@ -1,5 +1,6 @@
 use crate::s3client;
 use crate::types::UploadProgress;
+use std::path::PathBuf;
 use std::time::Duration;
 use tauri::Emitter;
 
@@ -136,4 +137,62 @@ pub async fn presign_object(
         .map_err(|e| format!("Failed to generate presigned URL: {e}"))?;
 
     Ok(serde_json::json!({ "url": presigned.uri().to_string() }))
+}
+
+/// Batch download files to a local folder, preserving relative paths.
+#[tauri::command]
+pub async fn batch_download(
+    account_idx: usize,
+    bucket: String,
+    keys: Vec<String>,
+    save_dir: String,
+    strip_prefix: Option<String>,
+) -> Result<serde_json::Value, String> {
+    if keys.is_empty() {
+        return Ok(serde_json::json!({ "success": true, "downloaded": 0 }));
+    }
+
+    let client = s3client::get_client(account_idx)?;
+    let strip = strip_prefix.unwrap_or_default();
+    let base = PathBuf::from(&save_dir);
+    let mut downloaded = 0u32;
+    let mut errors: Vec<String> = vec![];
+
+    for key in &keys {
+        let relative = if !strip.is_empty() && key.starts_with(&strip) {
+            &key[strip.len()..]
+        } else {
+            key.as_str()
+        };
+        let dest = base.join(relative);
+
+        if let Some(parent) = dest.parent() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                errors.push(format!("{key}: failed to create dir: {e}"));
+                continue;
+            }
+        }
+
+        match client.get_object().bucket(&bucket).key(key).send().await {
+            Ok(resp) => {
+                match resp.body.collect().await {
+                    Ok(body) => {
+                        if let Err(e) = tokio::fs::write(&dest, body.into_bytes()).await {
+                            errors.push(format!("{key}: write failed: {e}"));
+                        } else {
+                            downloaded += 1;
+                        }
+                    }
+                    Err(e) => errors.push(format!("{key}: read body failed: {e}")),
+                }
+            }
+            Err(e) => errors.push(format!("{key}: download failed: {e}")),
+        }
+    }
+
+    Ok(serde_json::json!({
+        "success": errors.is_empty(),
+        "downloaded": downloaded,
+        "errors": errors,
+    }))
 }

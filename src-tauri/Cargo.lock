@@ -4494,6 +4494,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "thiserror 2.0.18",
  "tokio",
+ "urlencoding",
 ]
 
 [[package]]

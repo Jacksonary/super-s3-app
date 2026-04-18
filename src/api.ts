@@ -187,4 +187,34 @@ export const api = {
       prefix,
     });
   },
+
+  rename(
+    accountId: number,
+    bucket: string,
+    srcKey: string,
+    dstKey: string
+  ): Promise<{ success: boolean; src: string; dst: string }> {
+    return invoke("rename_object", {
+      accountIdx: accountId,
+      bucket,
+      srcKey,
+      dstKey,
+    });
+  },
+
+  batchDownload(
+    accountId: number,
+    bucket: string,
+    keys: string[],
+    saveDir: string,
+    stripPrefix?: string
+  ): Promise<{ success: boolean; downloaded: number; errors: string[] }> {
+    return invoke("batch_download", {
+      accountIdx: accountId,
+      bucket,
+      keys,
+      saveDir,
+      stripPrefix: stripPrefix ?? "",
+    });
+  },
 };
