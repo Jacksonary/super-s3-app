@@ -159,6 +159,9 @@ pub async fn batch_download(
     let mut errors: Vec<String> = vec![];
 
     for key in &keys {
+        if key.ends_with('/') {
+            continue;
+        }
         let relative = if !strip.is_empty() && key.starts_with(&strip) {
             &key[strip.len()..]
         } else {

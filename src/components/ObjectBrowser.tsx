@@ -509,7 +509,9 @@ export function ObjectBrowser({ target }: Props) {
               continuation_token: ct ?? undefined,
               limit: 1000,
             });
-            res.items.forEach((i) => fileKeys.push(i.key));
+            res.items.forEach((i) => {
+              if (!i.key.endsWith("/")) fileKeys.push(i.key);
+            });
             ct = res.next_continuation_token;
           } while (ct);
         } else {

@@ -1,6 +1,7 @@
 use crate::types::AccountConfig;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{BehaviorVersion, Region, SharedCredentialsProvider};
+use aws_smithy_types::checksum_config::{RequestChecksumCalculation, ResponseChecksumValidation};
 use std::path::PathBuf;
 
 /// Detect cloud provider name from endpoint URL.
@@ -50,7 +51,9 @@ pub fn make_client(account: &AccountConfig) -> aws_sdk_s3::Client {
         .behavior_version(BehaviorVersion::latest())
         .credentials_provider(SharedCredentialsProvider::new(creds))
         .region(region)
-        .force_path_style(force_path_style);
+        .force_path_style(force_path_style)
+        .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+        .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
 
     if !account.endpoint.is_empty() {
         builder = builder.endpoint_url(&account.endpoint);

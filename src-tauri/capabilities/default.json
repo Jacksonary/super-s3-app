@@ -7,6 +7,7 @@
     "dialog:default",
     "dialog:allow-save",
     "dialog:allow-open",
+    "dialog:allow-ask",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text"
   ]
