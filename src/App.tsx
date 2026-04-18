@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Layout, theme, Typography, Empty, ConfigProvider } from "antd";
 import { Sidebar } from "./components/Sidebar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
@@ -70,6 +70,11 @@ export default function App() {
     setIsDark(next);
     localStorage.setItem("theme", next ? "dark" : "light");
   };
+
+  useEffect(() => {
+    document.documentElement.style.background = isDark ? "#141414" : "#ffffff";
+    document.body.style.background = isDark ? "#141414" : "#ffffff";
+  }, [isDark]);
 
   return (
     <div data-theme={isDark ? "dark" : "light"}>
