@@ -21,6 +21,7 @@ import {
   CloudServerOutlined,
   GithubOutlined,
 } from "@ant-design/icons";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import type { Account, SelectedBucket } from "../types";
 import { useUpdateCheck } from "../useUpdateCheck";
@@ -184,10 +185,8 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle }: Props) {
         {updateInfo ? (
           <Tooltip title={`New version available: v${updateInfo.latestVersion}`}>
             <a
-              href={updateInfo.releaseUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 11, color: token.colorWarningText }}
+              onClick={() => openUrl(updateInfo.releaseUrl)}
+              style={{ fontSize: 11, color: token.colorWarningText, cursor: "pointer" }}
             >
               v{__APP_VERSION__} <ArrowRightOutlined style={{ fontSize: 9 }} /> v{updateInfo.latestVersion}
             </a>
@@ -200,22 +199,18 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle }: Props) {
         <Space size={8} align="center">
           <Tooltip title="GitHub">
             <a
-              href="https://github.com/Jacksonary/super-s3-app"
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => openUrl("https://github.com/Jacksonary/super-s3-app")}
               className="sidebar-icon-link"
-              style={{ color: token.colorTextQuaternary }}
+              style={{ color: token.colorTextQuaternary, cursor: "pointer" }}
             >
               <GithubOutlined />
             </a>
           </Tooltip>
           <Tooltip title="Gitee">
             <a
-              href="https://gitee.com/weiguoliu/super-s3-app"
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => openUrl("https://gitee.com/weiguoliu/super-s3-app")}
               className="sidebar-icon-link"
-              style={{ color: token.colorTextQuaternary }}
+              style={{ color: token.colorTextQuaternary, cursor: "pointer" }}
             >
               <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
                 <path d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.016 0zm6.09 5.333c.328 0 .593.26.593.593v1.482a.594.594 0 0 1-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.26.593.593.593h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 0 0-.592-.593h-4.15a.592.592 0 0 1-.592-.592v-1.482a.593.593 0 0 1 .593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 0 1-4 4H5.926a.593.593 0 0 1-.593-.593V9.778a4.444 4.444 0 0 1 4.445-4.444h8.296Z"/>
