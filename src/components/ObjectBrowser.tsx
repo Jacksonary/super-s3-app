@@ -525,7 +525,9 @@ export function ObjectBrowser({ target }: Props) {
 
       const folders = keys.filter((k) => k.endsWith("/"));
       const isSingleFolder = keys.length === 1 && folders.length === 1;
-      const stripPrefix = isSingleFolder ? folders[0] : prefix;
+      const stripPrefix = isSingleFolder
+        ? folders[0].slice(0, folders[0].slice(0, -1).lastIndexOf("/") + 1)
+        : prefix;
 
       const result = await api.batchDownload(accountId, bucket, fileKeys, saveDir, stripPrefix);
       if (result.errors.length > 0) {
