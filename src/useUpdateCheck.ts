@@ -1,14 +1,10 @@
 import { useEffect, useState } from "react";
+import { api } from "./api";
 
 interface UpdateInfo {
   latestVersion: string;
   releaseUrl: string;
 }
-
-const GITHUB_API =
-  "https://api.github.com/repos/Jacksonary/super-s3/releases/latest";
-const GITEE_API =
-  "https://gitee.com/api/v5/repos/weiguoliu/super-s3/releases/latest";
 
 const CACHE_KEY = "super-s3-update-check";
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
@@ -29,22 +25,6 @@ function isNewer(remote: string, local: string): boolean {
   return false;
 }
 
-async function fetchRelease(
-  url: string,
-  source: "github" | "gitee"
-): Promise<UpdateInfo> {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`${source}: ${resp.status}`);
-  const data = await resp.json();
-  const tag: string = data.tag_name ?? "";
-  if (!tag) throw new Error(`${source}: no tag_name`);
-  const releaseUrl =
-    source === "github"
-      ? data.html_url ?? `https://github.com/Jacksonary/super-s3/releases`
-      : `https://gitee.com/weiguoliu/super-s3/releases/tag/${tag}`;
-  return { latestVersion: tag.replace(/^v/i, ""), releaseUrl };
-}
-
 export function useUpdateCheck(currentVersion: string) {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
 
@@ -62,14 +42,12 @@ export function useUpdateCheck(currentVersion: string) {
       } catch { /* ignore */ }
     }
 
-    const controller = new AbortController();
+    let cancelled = false;
 
-    Promise.any([
-      fetchRelease(GITHUB_API, "github"),
-      fetchRelease(GITEE_API, "gitee"),
-    ])
+    api
+      .checkUpdate()
       .then((info) => {
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         sessionStorage.setItem(
           CACHE_KEY,
           JSON.stringify({ info, ts: Date.now() })
@@ -79,10 +57,12 @@ export function useUpdateCheck(currentVersion: string) {
         }
       })
       .catch(() => {
-        // both sources failed — silently ignore
+        // silently ignore
       });
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [currentVersion]);
 
   return update;

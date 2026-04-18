@@ -21,6 +21,7 @@ aws-types = "1"
 aws-smithy-types = "1"
 thiserror = "2"
 urlencoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

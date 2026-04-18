@@ -217,4 +217,8 @@ export const api = {
       stripPrefix: stripPrefix ?? "",
     });
   },
+
+  checkUpdate(): Promise<{ latestVersion: string; releaseUrl: string }> {
+    return invoke("check_update");
+  },
 };

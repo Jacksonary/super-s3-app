@@ -26,6 +26,8 @@ pub fn run() {
             commands::transfer::upload_object,
             commands::transfer::upload_object_bytes,
             commands::transfer::presign_object,
+            // Update
+            commands::update::check_update,
             // Metadata
             commands::metadata::object_meta,
             commands::metadata::preview_object,
