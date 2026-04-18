@@ -102,3 +102,12 @@ pub struct UploadProgress {
     pub task_id: String,
     pub progress: u8,
 }
+
+/// Batch download progress event payload.
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadProgress {
+    pub total: u32,
+    pub completed: u32,
+    pub failed: u32,
+    pub current_key: String,
+}

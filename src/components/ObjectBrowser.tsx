@@ -105,9 +105,17 @@ export function ObjectBrowser({ target }: Props) {
   const [renameItem, setRenameItem] = useState<ObjectItem | null>(null);
   const [renameForm] = Form.useForm();
 
-  // Listen for upload progress events from Rust
+  // download progress
+  const [downloadProgress, setDownloadProgress] = useState<{
+    total: number;
+    completed: number;
+    failed: number;
+    currentKey: string;
+  } | null>(null);
+
+  // Listen for upload / download progress events from Rust
   useEffect(() => {
-    const unlisten = listen<{ task_id: string; progress: number }>(
+    const unlistenUpload = listen<{ task_id: string; progress: number }>(
       "upload-progress",
       (event) => {
         const { task_id, progress } = event.payload;
@@ -118,8 +126,18 @@ export function ObjectBrowser({ target }: Props) {
         );
       }
     );
+    const unlistenDownload = listen<{
+      total: number;
+      completed: number;
+      failed: number;
+      current_key: string;
+    }>("download-progress", (event) => {
+      const { total, completed, failed, current_key } = event.payload;
+      setDownloadProgress({ total, completed, failed, currentKey: current_key });
+    });
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenUpload.then((fn) => fn());
+      unlistenDownload.then((fn) => fn());
     };
   }, []);
 
@@ -232,6 +250,39 @@ export function ObjectBrowser({ target }: Props) {
     loadSearch(val, 0);
   };
 
+  // ─── Collect keys (parallel per folder) ─────────────────────────────────
+
+  const collectKeysUnderPrefix = async (pfx: string): Promise<string[]> => {
+    const result: string[] = [];
+    let ct: string | null | undefined;
+    do {
+      const res = await api.listObjects(accountId, bucket, {
+        prefix: pfx,
+        delimiter: "",
+        continuation_token: ct ?? undefined,
+        limit: 1000,
+      });
+      res.items.forEach((i) => result.push(i.key));
+      ct = res.next_continuation_token;
+    } while (ct);
+    return result;
+  };
+
+  const expandKeys = async (
+    keys: string[],
+    opts: { filesOnly?: boolean; includeFolderMarker?: boolean } = {}
+  ): Promise<string[]> => {
+    const { filesOnly = false, includeFolderMarker = false } = opts;
+    const tasks = keys.map(async (k) => {
+      if (!k.endsWith("/")) return [k];
+      const children = await collectKeysUnderPrefix(k);
+      if (includeFolderMarker && !children.includes(k)) children.push(k);
+      return filesOnly ? children.filter((c) => !c.endsWith("/")) : children;
+    });
+    const nested = await Promise.all(tasks);
+    return nested.flat();
+  };
+
   // ─── Delete ────────────────────────────────────────────────────────────
 
   const deleteSelected = async () => {
@@ -239,27 +290,7 @@ export function ObjectBrowser({ target }: Props) {
     if (!keys.length) return;
     setDeleting(true);
     try {
-      const toDelete: string[] = [];
-      for (const k of keys) {
-        if (k.endsWith("/")) {
-          let ct: string | null | undefined;
-          do {
-            const res = await api.listObjects(accountId, bucket, {
-              prefix: k,
-              delimiter: "",
-              continuation_token: ct ?? undefined,
-              limit: 1000,
-            });
-            res.items.forEach((i) => toDelete.push(i.key));
-            ct = res.next_continuation_token;
-          } while (ct);
-          if (!toDelete.includes(k)) {
-            toDelete.push(k);
-          }
-        } else {
-          toDelete.push(k);
-        }
-      }
+      const toDelete = await expandKeys(keys, { includeFolderMarker: true });
       if (!toDelete.length) {
         message.warning("Nothing to delete");
         return;
@@ -276,26 +307,10 @@ export function ObjectBrowser({ target }: Props) {
   };
 
   const handleDeleteRow = async (item: ObjectItem) => {
-    const keysToDelete = item.type === "folder" ? [] : [item.key];
-    if (item.type === "folder") {
-      let ct: string | null | undefined;
-      do {
-        const res = await api.listObjects(accountId, bucket, {
-          prefix: item.key,
-          delimiter: "",
-          continuation_token: ct ?? undefined,
-          limit: 1000,
-        });
-        res.items.forEach((i) => keysToDelete.push(i.key));
-        ct = res.next_continuation_token;
-      } while (ct);
-    }
-    if (!keysToDelete.length) {
-      keysToDelete.push(item.key);
-    }
     setDeleting(true);
     try {
-      const result = await api.deleteObjects(accountId, bucket, keysToDelete);
+      const toDelete = await expandKeys([item.key], { includeFolderMarker: true });
+      const result = await api.deleteObjects(accountId, bucket, toDelete);
       message.success(`Deleted ${result.deleted} object(s)`);
       reload();
     } catch (e: unknown) {
@@ -496,28 +511,11 @@ export function ObjectBrowser({ target }: Props) {
     if (!saveDir) return;
 
     setDownloading(true);
-    const hide = message.loading("Preparing download...", 0);
+    setDownloadProgress(null);
+    const hidePrep = message.loading("Preparing download...", 0);
     try {
-      const fileKeys: string[] = [];
-      for (const k of keys) {
-        if (k.endsWith("/")) {
-          let ct: string | null | undefined;
-          do {
-            const res = await api.listObjects(accountId, bucket, {
-              prefix: k,
-              delimiter: "",
-              continuation_token: ct ?? undefined,
-              limit: 1000,
-            });
-            res.items.forEach((i) => {
-              if (!i.key.endsWith("/")) fileKeys.push(i.key);
-            });
-            ct = res.next_continuation_token;
-          } while (ct);
-        } else {
-          fileKeys.push(k);
-        }
-      }
+      const fileKeys = await expandKeys(keys, { filesOnly: true });
+      hidePrep();
       if (!fileKeys.length) {
         message.warning("No files to download");
         return;
@@ -536,10 +534,11 @@ export function ObjectBrowser({ target }: Props) {
         message.success(`Downloaded ${result.downloaded} file(s)`);
       }
     } catch (e: unknown) {
+      hidePrep();
       message.error(`Download failed: ${(e as Error).message}`);
     } finally {
-      hide();
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -848,7 +847,9 @@ export function ObjectBrowser({ target }: Props) {
                 loading={downloading}
                 onClick={downloadSelected}
               >
-                Download
+                {downloadProgress
+                  ? `${downloadProgress.completed}/${downloadProgress.total}`
+                  : "Download"}
               </Button>
               <Popconfirm
                 title={`Delete ${selectedRowKeys.length} item(s)?`}

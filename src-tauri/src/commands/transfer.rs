@@ -1,8 +1,11 @@
 use crate::s3client;
-use crate::types::UploadProgress;
+use crate::types::{DownloadProgress, UploadProgress};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
+use tokio::sync::Semaphore;
 
 #[tauri::command]
 pub async fn download_object(
@@ -140,8 +143,10 @@ pub async fn presign_object(
 }
 
 /// Batch download files to a local folder, preserving relative paths.
+/// Uses up to 5 concurrent downloads for performance.
 #[tauri::command]
 pub async fn batch_download(
+    app: tauri::AppHandle,
     account_idx: usize,
     bucket: String,
     keys: Vec<String>,
@@ -155,47 +160,98 @@ pub async fn batch_download(
     let client = s3client::get_client(account_idx)?;
     let strip = strip_prefix.unwrap_or_default();
     let base = PathBuf::from(&save_dir);
-    let mut downloaded = 0u32;
-    let mut errors: Vec<String> = vec![];
+    let file_keys: Vec<&String> = keys.iter().filter(|k| !k.ends_with('/')).collect();
+    let total = file_keys.len() as u32;
 
-    for key in &keys {
-        if key.ends_with('/') {
-            continue;
-        }
-        let relative = if !strip.is_empty() && key.starts_with(&strip) {
-            &key[strip.len()..]
-        } else {
-            key.as_str()
-        };
-        let dest = base.join(relative);
+    let completed = Arc::new(AtomicU32::new(0));
+    let failed = Arc::new(AtomicU32::new(0));
+    let errors = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+    let semaphore = Arc::new(Semaphore::new(5));
 
-        if let Some(parent) = dest.parent() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                errors.push(format!("{key}: failed to create dir: {e}"));
-                continue;
-            }
-        }
+    let mut handles = Vec::new();
+    for key in file_keys {
+        let client = client.clone();
+        let bucket = bucket.clone();
+        let key = key.clone();
+        let strip = strip.clone();
+        let base = base.clone();
+        let app = app.clone();
+        let completed = Arc::clone(&completed);
+        let failed = Arc::clone(&failed);
+        let errors = Arc::clone(&errors);
+        let semaphore = Arc::clone(&semaphore);
 
-        match client.get_object().bucket(&bucket).key(key).send().await {
-            Ok(resp) => {
-                match resp.body.collect().await {
-                    Ok(body) => {
-                        if let Err(e) = tokio::fs::write(&dest, body.into_bytes()).await {
-                            errors.push(format!("{key}: write failed: {e}"));
-                        } else {
-                            downloaded += 1;
-                        }
-                    }
-                    Err(e) => errors.push(format!("{key}: read body failed: {e}")),
+        handles.push(tokio::spawn(async move {
+            let _permit = semaphore.acquire().await.unwrap();
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    total,
+                    completed: completed.load(Ordering::Relaxed),
+                    failed: failed.load(Ordering::Relaxed),
+                    current_key: key.clone(),
+                },
+            );
+
+            let relative = if !strip.is_empty() && key.starts_with(&strip) {
+                &key[strip.len()..]
+            } else {
+                key.as_str()
+            };
+            let dest = base.join(relative);
+
+            if let Some(parent) = dest.parent() {
+                if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                    errors.lock().await.push(format!("{key}: failed to create dir: {e}"));
+                    failed.fetch_add(1, Ordering::Relaxed);
+                    return;
                 }
             }
-            Err(e) => errors.push(format!("{key}: download failed: {e}")),
-        }
+
+            match client.get_object().bucket(&bucket).key(&key).send().await {
+                Ok(resp) => match resp.body.collect().await {
+                    Ok(body) => {
+                        if let Err(e) = tokio::fs::write(&dest, body.into_bytes()).await {
+                            errors.lock().await.push(format!("{key}: write failed: {e}"));
+                            failed.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            completed.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    Err(e) => {
+                        errors.lock().await.push(format!("{key}: read body failed: {e}"));
+                        failed.fetch_add(1, Ordering::Relaxed);
+                    }
+                },
+                Err(e) => {
+                    errors.lock().await.push(format!("{key}: download failed: {e}"));
+                    failed.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    total,
+                    completed: completed.load(Ordering::Relaxed),
+                    failed: failed.load(Ordering::Relaxed),
+                    current_key: String::new(),
+                },
+            );
+        }));
     }
 
+    for h in handles {
+        let _ = h.await;
+    }
+
+    let final_completed = completed.load(Ordering::Relaxed);
+    let final_errors = errors.lock().await.clone();
+
     Ok(serde_json::json!({
-        "success": errors.is_empty(),
-        "downloaded": downloaded,
-        "errors": errors,
+        "success": final_errors.is_empty(),
+        "downloaded": final_completed,
+        "errors": final_errors,
     }))
 }
