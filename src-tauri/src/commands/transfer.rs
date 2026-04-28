@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 fn emit_progress(app: &tauri::AppHandle, event: &str, task_id: &Option<String>, progress: u8) {
     if let Some(tid) = task_id {
@@ -105,31 +106,151 @@ async fn download_inner(
         .map_err(|e| format!("Failed to download object: {e}"))?;
 
     let total = resp.content_length().unwrap_or(0) as u64;
-    let mut body = resp.body;
-    let mut file = tokio::fs::File::create(tmp_path)
-        .await
-        .map_err(|e| format!("Failed to create file: {e}"))?;
 
-    emit_progress(app, "download-single-progress", task_id, 0);
-    let mut received: u64 = 0;
-    let mut last_pct: u8 = 0;
+    // For large files use parallel Range GETs (each on its own TCP connection),
+    // then write at the correct file offset. For small files, stream directly.
+    // AWS recommends Range fetches for objects > 100 MB.
+    const RANGE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
+    const RANGE_PART_SIZE: u64 = 16 * 1024 * 1024; // 16 MB per range
+    const MAX_CONCURRENT_RANGES: usize = 4;
 
-    while let Some(chunk) = body.next().await {
-        let bytes = chunk.map_err(|e| format!("Failed to read body: {e}"))?;
-        file.write_all(&bytes)
+    if total >= RANGE_THRESHOLD {
+        // Drop the initial response body — we'll use Range GETs instead.
+        drop(resp);
+
+        // Pre-allocate the file to avoid fragmentation and allow offset writes.
+        let file = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(tmp_path)
             .await
-            .map_err(|e| format!("Failed to write file: {e}"))?;
-        received += bytes.len() as u64;
-        if total > 0 {
-            let pct = (((received as u128 * 99) / total as u128).min(99)) as u8;
-            if pct > last_pct {
-                last_pct = pct;
-                emit_progress(app, "download-single-progress", task_id, pct);
+            .map_err(|e| format!("Failed to create file: {e}"))?;
+        file.set_len(total)
+            .await
+            .map_err(|e| format!("Failed to pre-allocate file: {e}"))?;
+        let file = Arc::new(tokio::sync::Mutex::new(file));
+
+        let num_parts = total.div_ceil(RANGE_PART_SIZE);
+        let mut join_set: JoinSet<Result<(), String>> = JoinSet::new();
+        let mut completed_ranges: u64 = 0;
+
+        emit_progress(app, "download-single-progress", task_id, 0);
+
+        for part_idx in 0..num_parts {
+            // Backpressure: drain one completed range before spawning more.
+            while join_set.len() >= MAX_CONCURRENT_RANGES {
+                match join_set.join_next().await {
+                    Some(Ok(Ok(()))) => {
+                        completed_ranges += 1;
+                        let pct = ((completed_ranges * 99) / num_parts).min(99) as u8;
+                        emit_progress(app, "download-single-progress", task_id, pct);
+                    }
+                    Some(Ok(Err(e))) => {
+                        join_set.abort_all();
+                        return Err(e);
+                    }
+                    Some(Err(e)) => {
+                        join_set.abort_all();
+                        return Err(format!("Download task panicked: {e}"));
+                    }
+                    None => break,
+                }
+            }
+
+            let start = part_idx * RANGE_PART_SIZE;
+            let end = (start + RANGE_PART_SIZE - 1).min(total - 1);
+            let range_str = format!("bytes={start}-{end}");
+
+            let cl = client.clone();
+            let bkt = bucket.to_owned();
+            let ky = key.to_owned();
+            let file = Arc::clone(&file);
+
+            join_set.spawn(async move {
+                let r = cl
+                    .get_object()
+                    .bucket(&bkt)
+                    .key(&ky)
+                    .range(range_str)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Range {start}: {e}"))?;
+                let bytes = r
+                    .body
+                    .collect()
+                    .await
+                    .map_err(|e| format!("Range {start} read: {e}"))?
+                    .into_bytes();
+
+                let mut f = file.lock().await;
+                f.seek(std::io::SeekFrom::Start(start))
+                    .await
+                    .map_err(|e| format!("Seek {start}: {e}"))?;
+                f.write_all(&bytes)
+                    .await
+                    .map_err(|e| format!("Write {start}: {e}"))?;
+                Ok(())
+            });
+        }
+
+        // Drain remaining.
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok(Ok(())) => {
+                    completed_ranges += 1;
+                    let pct = ((completed_ranges * 99) / num_parts).min(99) as u8;
+                    emit_progress(app, "download-single-progress", task_id, pct);
+                }
+                Ok(Err(e)) => {
+                    join_set.abort_all();
+                    return Err(e);
+                }
+                Err(e) => {
+                    join_set.abort_all();
+                    return Err(format!("Download task panicked: {e}"));
+                }
             }
         }
+
+        let mut f = Arc::try_unwrap(file)
+            .map_err(|_| "File Arc still has multiple owners".to_string())?
+            .into_inner();
+        f.flush()
+            .await
+            .map_err(|e| format!("Failed to flush file: {e}"))?;
+    } else {
+        // Small/medium file: single streaming download.
+        let mut body = resp.body;
+        let mut file = tokio::fs::File::create(tmp_path)
+            .await
+            .map_err(|e| format!("Failed to create file: {e}"))?;
+
+        emit_progress(app, "download-single-progress", task_id, 0);
+        let mut received: u64 = 0;
+        let mut last_pct: u8 = 0;
+
+        while let Some(chunk) = body.next().await {
+            let bytes = chunk.map_err(|e| format!("Failed to read body: {e}"))?;
+            file.write_all(&bytes)
+                .await
+                .map_err(|e| format!("Failed to write file: {e}"))?;
+            received += bytes.len() as u64;
+            if total > 0 {
+                let pct = (((received as u128 * 99) / total as u128).min(99)) as u8;
+                if pct > last_pct {
+                    last_pct = pct;
+                    emit_progress(app, "download-single-progress", task_id, pct);
+                }
+            }
+        }
+
+        file.flush()
+            .await
+            .map_err(|e| format!("Failed to flush file: {e}"))?;
     }
 
-    file.flush().await.map_err(|e| format!("Failed to flush file: {e}"))?;
     emit_progress(app, "download-single-progress", task_id, 100);
     Ok(())
 }
@@ -155,13 +276,15 @@ pub async fn upload_object(
 
     emit_progress(&app, "upload-progress", &task_id, 0);
 
-    // S3 multipart minimum part size is 5 MB. Use multipart for files ≥5 MB
-    // so we can report real progress. Tiny files (<5 MB) read into memory once.
-    const MULTIPART_THRESHOLD: u64 = 5 * 1024 * 1024; // 5 MB
-    const PART_SIZE: usize = 5 * 1024 * 1024; // 5 MB
+    // AWS recommends multipart for files ≥ 100 MB; smaller files use a single PUT.
+    // Part size of 16 MB balances part count, RTT overhead, and memory pressure.
+    // 4 concurrent parts saturates typical broadband without excessive memory use.
+    const MULTIPART_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
+    const PART_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+    const MAX_CONCURRENT_PARTS: usize = 4;
 
     if size < MULTIPART_THRESHOLD {
-        // Tiny file: read into memory, single put_object (no meaningful progress)
+        // Small/medium file: single PUT, no multipart overhead.
         let data = tokio::fs::read(&file_path)
             .await
             .map_err(|e| format!("Failed to read file: {e}"))?;
@@ -176,7 +299,7 @@ pub async fn upload_object(
             .await
             .map_err(|e| format!("Failed to upload: {e}"))?;
     } else {
-        // ≥5 MB: multipart upload with per-part progress
+        // Large file: multipart upload with concurrent part uploads.
         let upload_id = client
             .create_multipart_upload()
             .bucket(&bucket)
@@ -188,77 +311,130 @@ pub async fn upload_object(
             .upload_id
             .ok_or_else(|| "Missing upload_id".to_string())?;
 
+        // Helper to abort on any error path.
+        let abort = |client: aws_sdk_s3::Client, bucket: String, key: String, uid: String| {
+            tokio::spawn(async move {
+                let _ = client
+                    .abort_multipart_upload()
+                    .bucket(bucket)
+                    .key(key)
+                    .upload_id(uid)
+                    .send()
+                    .await;
+            });
+        };
+
         let total_parts = (size as usize).div_ceil(PART_SIZE) as u32;
         debug_assert!(total_parts > 0);
-        let mut completed_parts: Vec<CompletedPart> = Vec::new();
+
+        // completed_parts will be populated out-of-order as parts finish concurrently.
+        let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(total_parts as usize);
         let mut file = tokio::fs::File::open(&file_path)
             .await
             .map_err(|e| format!("Failed to open file: {e}"))?;
         let mut part_number = 1i32;
+        let mut join_set: JoinSet<Result<(i32, String), String>> = JoinSet::new();
         let mut buf = vec![0u8; PART_SIZE];
 
         loop {
+            // Drain one completed part before reading the next chunk when at capacity,
+            // so we never hold more than MAX_CONCURRENT_PARTS chunks in memory at once.
+            while join_set.len() >= MAX_CONCURRENT_PARTS {
+                match join_set.join_next().await {
+                    Some(Ok(Ok((pnum, etag)))) => completed_parts.push((pnum, etag)),
+                    Some(Ok(Err(e))) => {
+                        join_set.abort_all();
+                        abort(client.clone(), bucket.clone(), key.clone(), upload_id.clone());
+                        return Err(e);
+                    }
+                    Some(Err(e)) => {
+                        join_set.abort_all();
+                        abort(client.clone(), bucket.clone(), key.clone(), upload_id.clone());
+                        return Err(format!("Part task panicked: {e}"));
+                    }
+                    None => break,
+                }
+                let done = completed_parts.len() as u32;
+                let pct = ((done * 99) / total_parts).min(99) as u8;
+                emit_progress(&app, "upload-progress", &task_id, pct);
+            }
+
+            // Read the next chunk.
             let mut bytes_read = 0usize;
             loop {
                 let n = file
                     .read(&mut buf[bytes_read..])
                     .await
                     .map_err(|e| format!("Failed to read file: {e}"))?;
-                if n == 0 {
-                    break;
-                }
+                if n == 0 { break; }
                 bytes_read += n;
-                if bytes_read == PART_SIZE {
-                    break;
-                }
+                if bytes_read == PART_SIZE { break; }
             }
-            if bytes_read == 0 {
-                break;
-            }
+            if bytes_read == 0 { break; }
 
+            // Spawn this part upload concurrently.
             let chunk = buf[..bytes_read].to_vec();
-            let part_result = client
-                .upload_part()
-                .bucket(&bucket)
-                .key(&key)
-                .upload_id(&upload_id)
-                .part_number(part_number)
-                .body(ByteStream::from(chunk))
-                .send()
-                .await;
-
-            let part = match part_result {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = client
-                        .abort_multipart_upload()
-                        .bucket(&bucket)
-                        .key(&key)
-                        .upload_id(&upload_id)
-                        .send()
-                        .await;
-                    return Err(format!("Failed to upload: {e}"));
-                }
-            };
-
-            let etag = part.e_tag().ok_or_else(|| {
-                format!("Part {part_number}: S3 returned no ETag — cannot complete multipart upload")
-            })?;
-
-            completed_parts.push(
-                CompletedPart::builder()
-                    .e_tag(etag)
-                    .part_number(part_number)
-                    .build(),
+            let (cl, bkt, ky, uid) = (
+                client.clone(), bucket.clone(), key.clone(), upload_id.clone(),
             );
-
-            let progress = ((part_number as u32) * 99 / total_parts).min(99) as u8;
-            emit_progress(&app, "upload-progress", &task_id, progress);
+            let pnum = part_number;
+            join_set.spawn(async move {
+                let out = cl
+                    .upload_part()
+                    .bucket(&bkt)
+                    .key(&ky)
+                    .upload_id(&uid)
+                    .part_number(pnum)
+                    .body(ByteStream::from(chunk))
+                    .send()
+                    .await
+                    .map_err(|e| format!("Part {pnum} upload failed: {e}"))?;
+                let etag = out
+                    .e_tag()
+                    .ok_or_else(|| {
+                        format!("Part {pnum}: S3 returned no ETag — cannot complete multipart upload")
+                    })?
+                    .to_owned();
+                Ok((pnum, etag))
+            });
             part_number += 1;
         }
 
+        // Drain remaining in-flight parts.
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok(Ok((pnum, etag))) => completed_parts.push((pnum, etag)),
+                Ok(Err(e)) => {
+                    join_set.abort_all();
+                    abort(client.clone(), bucket.clone(), key.clone(), upload_id.clone());
+                    return Err(e);
+                }
+                Err(e) => {
+                    join_set.abort_all();
+                    abort(client.clone(), bucket.clone(), key.clone(), upload_id.clone());
+                    return Err(format!("Part task panicked: {e}"));
+                }
+            }
+            let done = completed_parts.len() as u32;
+            let pct = ((done * 99) / total_parts).min(99) as u8;
+            emit_progress(&app, "upload-progress", &task_id, pct);
+        }
+
+        // Parts may have completed out of order; S3 requires ascending order.
+        completed_parts.sort_unstable_by_key(|(pnum, _)| *pnum);
+
+        let s3_parts: Vec<CompletedPart> = completed_parts
+            .into_iter()
+            .map(|(pnum, etag)| {
+                CompletedPart::builder()
+                    .e_tag(etag)
+                    .part_number(pnum)
+                    .build()
+            })
+            .collect();
+
         let completed = CompletedMultipartUpload::builder()
-            .set_parts(Some(completed_parts))
+            .set_parts(Some(s3_parts))
             .build();
 
         let complete_result = client
@@ -271,13 +447,7 @@ pub async fn upload_object(
             .await;
 
         if let Err(e) = complete_result {
-            let _ = client
-                .abort_multipart_upload()
-                .bucket(&bucket)
-                .key(&key)
-                .upload_id(&upload_id)
-                .send()
-                .await;
+            abort(client, bucket, key, upload_id);
             return Err(format!("Failed to complete multipart upload: {e}"));
         }
     }

@@ -168,7 +168,9 @@ export function ObjectBrowser({ target }: Props) {
     };
   }, []);
 
-  // Keep a ref to the latest doUploadPaths to avoid stale closure in drag-drop listener
+  // Holds the latest doUploadPaths; updated each render via useLayoutEffect below.
+  // The noop default is intentional: drops arriving before first commit are silently
+  // ignored, which is the correct behaviour (bucket not yet loaded).
   const doUploadPathsRef = useRef<(paths: string[]) => void>(() => {});
 
   // Listen for Tauri window drag-drop events — registered once, uses ref for latest handler
@@ -331,7 +333,7 @@ export function ObjectBrowser({ target }: Props) {
   // ─── Delete ────────────────────────────────────────────────────────────
 
   const deleteSelected = async () => {
-    const keys = selectedRowKeys as string[];
+    const keys = selectedRowKeys.filter((k): k is string => typeof k === "string");
     if (!keys.length) return;
     setDeleting(true);
     try {
@@ -367,14 +369,14 @@ export function ObjectBrowser({ target }: Props) {
 
   // ─── Download (native file dialog) ────────────────────────────────────
 
-  const handleDownload = async (item: ObjectItem) => {
-    const filename = item.key.split("/").pop() || "file";
+  const handleDownload = async (key: string) => {
+    const filename = key.split("/").pop() || "file";
     const savePath = await save({ defaultPath: filename, title: "Save file" });
     if (!savePath) return;
     const taskId = `dl-${Date.now()}-${filename}`;
     setDownloads((prev) => [...prev, { id: taskId, filename, progress: 0, done: false }]);
     try {
-      await api.download(accountId, bucket, item.key, savePath, taskId);
+      await api.download(accountId, bucket, key, savePath, taskId);
       setDownloads((prev) =>
         prev.map((d) => d.id === taskId ? { ...d, progress: 100, done: true } : d)
       );
@@ -383,6 +385,7 @@ export function ObjectBrowser({ target }: Props) {
       setDownloads((prev) =>
         prev.map((d) => d.id === taskId ? { ...d, error: String(e), done: true } : d)
       );
+      setTimeout(() => setDownloads((prev) => prev.filter((d) => d.id !== taskId)), 5000);
     }
   };
 
@@ -505,12 +508,12 @@ export function ObjectBrowser({ target }: Props) {
   const [downloading, setDownloading] = useState(false);
 
   const downloadSelected = async () => {
-    const keys = selectedRowKeys as string[];
+    const keys = selectedRowKeys.filter((k): k is string => typeof k === "string");
     if (!keys.length) return;
 
     // Single file: use save dialog
     if (keys.length === 1 && !keys[0].endsWith("/")) {
-      await handleDownload({ key: keys[0], name: keys[0].split("/").pop() || "file" } as ObjectItem);
+      await handleDownload(keys[0]);
       return;
     }
 
@@ -705,7 +708,7 @@ export function ObjectBrowser({ target }: Props) {
                   size="small"
                   type="text"
                   icon={<DownloadOutlined />}
-                  onClick={() => handleDownload(row)}
+                  onClick={() => handleDownload(row.key)}
                 />
               </Tooltip>
               <Tooltip title="Copy presigned URL">
