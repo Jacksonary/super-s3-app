@@ -88,19 +88,18 @@ pub struct ObjectMeta {
     pub metadata: HashMap<String, String>,
 }
 
-/// Upload result.
-#[derive(Debug, Serialize)]
-pub struct UploadResult {
-    pub success: bool,
-    pub key: String,
-    pub size: usize,
-}
-
-/// Upload progress event payload.
+/// Generic single-task transfer progress event payload (upload & download).
 #[derive(Debug, Clone, Serialize)]
-pub struct UploadProgress {
+pub struct TaskProgress {
     pub task_id: String,
     pub progress: u8,
+}
+
+/// Expanded local path entry returned by expand_paths.
+#[derive(Debug, Serialize)]
+pub struct ExpandedEntry {
+    pub local_path: String,
+    pub relative_path: String,
 }
 
 /// Batch download progress event payload.

@@ -58,3 +58,8 @@ export interface SelectedBucket {
   accountId: number;
   bucket: string;
 }
+
+export interface UploadEntry {
+  local_path: string;
+  relative_path: string;
+}

@@ -25,8 +25,8 @@ pub fn run() {
             commands::transfer::download_object,
             commands::transfer::batch_download,
             commands::transfer::upload_object,
-            commands::transfer::upload_object_bytes,
             commands::transfer::presign_object,
+            commands::transfer::expand_paths,
             // Update
             commands::update::check_update,
             // Metadata

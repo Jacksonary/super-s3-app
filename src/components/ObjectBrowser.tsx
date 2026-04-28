@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Table,
   Button,
@@ -18,9 +18,11 @@ import {
   theme,
   Badge,
   Select,
+  Dropdown,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
+  DownOutlined,
   FolderOutlined,
   FileOutlined,
   UploadOutlined,
@@ -41,8 +43,10 @@ import {
 import { save, open, ask } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { api } from "../api";
-import type { ObjectItem, SelectedBucket } from "../types";
+import type { ObjectItem, SelectedBucket, UploadEntry } from "../types";
 import { fmtSize, fmtDate } from "../utils";
 import { DetailDrawer } from "./DetailDrawer";
 
@@ -57,7 +61,16 @@ interface UploadTask {
   done: boolean;
   error?: string;
   filePath?: string;
+  relPath?: string;
   key?: string;
+}
+
+interface DownloadTask {
+  id: string;
+  filename: string;
+  progress: number;
+  done: boolean;
+  error?: string;
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────
@@ -89,6 +102,10 @@ export function ObjectBrowser({ target }: Props) {
 
   // upload
   const [uploads, setUploads] = useState<UploadTask[]>([]);
+  const uploadTaskCounter = useRef(0);
+
+  // single-file download progress
+  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
 
   // folder modal
   const [folderModal, setFolderModal] = useState(false);
@@ -126,6 +143,15 @@ export function ObjectBrowser({ target }: Props) {
         );
       }
     );
+    const unlistenDownloadSingle = listen<{ task_id: string; progress: number }>(
+      "download-single-progress",
+      (event) => {
+        const { task_id, progress } = event.payload;
+        setDownloads((prev) =>
+          prev.map((d) => d.id === task_id ? { ...d, progress } : d)
+        );
+      }
+    );
     const unlistenDownload = listen<{
       total: number;
       completed: number;
@@ -137,9 +163,28 @@ export function ObjectBrowser({ target }: Props) {
     });
     return () => {
       unlistenUpload.then((fn) => fn());
+      unlistenDownloadSingle.then((fn) => fn());
       unlistenDownload.then((fn) => fn());
     };
   }, []);
+
+  // Keep a ref to the latest doUploadPaths to avoid stale closure in drag-drop listener
+  const doUploadPathsRef = useRef<(paths: string[]) => void>(() => {});
+
+  // Listen for Tauri window drag-drop events — registered once, uses ref for latest handler
+  useEffect(() => {
+    const unlistenDrop = getCurrentWindow().onDragDropEvent((event) => {
+      const payload = event.payload as DragDropEvent;
+      if (payload.type !== "drop") return;
+      const { paths } = payload;
+      if (paths.length === 0) return;
+      doUploadPathsRef.current(paths);
+    });
+
+    return () => {
+      unlistenDrop.then((fn) => fn());
+    };
+  }, []); // registered once; handler updates via ref below
 
   // ─── Load objects ──────────────────────────────────────────────────────
 
@@ -300,7 +345,7 @@ export function ObjectBrowser({ target }: Props) {
       setSelectedRowKeys([]);
       reload();
     } catch (e: unknown) {
-      message.error(`Delete failed: ${(e as Error).message}`);
+      message.error(`Delete failed: ${String(e)}`);
     } finally {
       setDeleting(false);
     }
@@ -314,7 +359,7 @@ export function ObjectBrowser({ target }: Props) {
       message.success(`Deleted ${result.deleted} object(s)`);
       reload();
     } catch (e: unknown) {
-      message.error(`Delete failed: ${(e as Error).message}`);
+      message.error(`Delete failed: ${String(e)}`);
     } finally {
       setDeleting(false);
     }
@@ -326,11 +371,18 @@ export function ObjectBrowser({ target }: Props) {
     const filename = item.key.split("/").pop() || "file";
     const savePath = await save({ defaultPath: filename, title: "Save file" });
     if (!savePath) return;
+    const taskId = `dl-${Date.now()}-${filename}`;
+    setDownloads((prev) => [...prev, { id: taskId, filename, progress: 0, done: false }]);
     try {
-      await api.download(accountId, bucket, item.key, savePath);
-      message.success("Download complete");
+      await api.download(accountId, bucket, item.key, savePath, taskId);
+      setDownloads((prev) =>
+        prev.map((d) => d.id === taskId ? { ...d, progress: 100, done: true } : d)
+      );
+      setTimeout(() => setDownloads((prev) => prev.filter((d) => d.id !== taskId)), 2500);
     } catch (e: unknown) {
-      message.error(`Download failed: ${e}`);
+      setDownloads((prev) =>
+        prev.map((d) => d.id === taskId ? { ...d, error: String(e), done: true } : d)
+      );
     }
   };
 
@@ -338,19 +390,19 @@ export function ObjectBrowser({ target }: Props) {
 
   const CONCURRENCY = 5;
 
-  const doUploadPaths = async (paths: string[]) => {
+  const doUploadEntries = async (entries: UploadEntry[]) => {
     let idx = 0;
 
     const worker = async () => {
-      while (idx < paths.length) {
+      while (idx < entries.length) {
         const i = idx++;
-        const filePath = paths[i];
-        const filename = filePath.split("/").pop()?.split("\\").pop() || "file";
-        const taskId = `${Date.now()}-${i}-${filename}`;
-        const key = prefix + filename;
+        const { local_path: filePath, relative_path: relPath } = entries[i];
+        const filename = relPath;
+        const taskId = `upload-${++uploadTaskCounter.current}-${relPath.replace(/\//g, "-")}`;
+        const key = prefix + relPath;
         setUploads((prev) => [
           ...prev,
-          { id: taskId, filename, progress: 0, done: false, filePath, key },
+          { id: taskId, filename, progress: 0, done: false, filePath, relPath, key },
         ]);
         try {
           await api.uploadObject(accountId, bucket, key, filePath, undefined, taskId);
@@ -373,26 +425,29 @@ export function ObjectBrowser({ target }: Props) {
     };
 
     const workers = Array.from(
-      { length: Math.min(CONCURRENCY, paths.length) },
+      { length: Math.min(CONCURRENCY, entries.length) },
       () => worker()
     );
-    await Promise.all(workers);
+    await Promise.allSettled(workers);
     reload();
   };
 
-  const handleUploadButton = async () => {
-    const selected = await open({ multiple: true, title: "Select files to upload" });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
+  /** Expand paths, check duplicates, then upload. */
+  const doUploadPaths = async (paths: string[]) => {
+    let entries: UploadEntry[];
+    try {
+      entries = await api.expandPaths(paths);
+    } catch (e: unknown) {
+      message.error(`Failed to expand paths: ${e}`);
+      return;
+    }
+    if (entries.length === 0) return;
 
     const existingKeys = new Set(items.map((i) => i.key));
-    const duplicates = paths.filter((p) => {
-      const name = p.split("/").pop()?.split("\\").pop() || "";
-      return existingKeys.has(prefix + name);
-    });
+    const duplicates = entries.filter((e) => existingKeys.has(prefix + e.relative_path));
 
     if (duplicates.length > 0) {
-      const names = duplicates.map((p) => p.split("/").pop()?.split("\\").pop() || "");
+      const names = duplicates.map((e) => e.relative_path);
       const label =
         names.length <= 3
           ? names.join(", ")
@@ -403,81 +458,34 @@ export function ObjectBrowser({ target }: Props) {
       );
       if (!overwrite) return;
     }
+    doUploadEntries(entries);
+  };
+
+  // Keep ref in sync with the latest doUploadPaths (called by drag-drop listener)
+  useLayoutEffect(() => {
+    doUploadPathsRef.current = doUploadPaths;
+  });
+
+  const handleUploadButton = async () => {
+    const selected = await open({ multiple: true, directory: false, title: "Select files to upload" });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
     doUploadPaths(paths);
   };
 
-  // Drag-drop: read File as bytes and upload
-  const doUploadBytes = async (files: File[]) => {
-    let idx = 0;
-
-    const worker = async () => {
-      while (idx < files.length) {
-        const i = idx++;
-        const file = files[i];
-        const taskId = `${Date.now()}-${i}-${file.name}`;
-        const key = prefix + file.name;
-        setUploads((prev) => [
-          ...prev,
-          { id: taskId, filename: file.name, progress: 0, done: false, key },
-        ]);
-        try {
-          const buf = await file.arrayBuffer();
-          const data = Array.from(new Uint8Array(buf));
-          await api.uploadObjectBytes(accountId, bucket, key, data, file.type || undefined);
-          setUploads((prev) =>
-            prev.map((u) =>
-              u.id === taskId ? { ...u, progress: 100, done: true } : u
-            )
-          );
-          setTimeout(() => {
-            setUploads((prev) => prev.filter((u) => u.id !== taskId));
-          }, 2500);
-        } catch (e: unknown) {
-          setUploads((prev) =>
-            prev.map((u) =>
-              u.id === taskId ? { ...u, error: String(e), done: true } : u
-            )
-          );
-        }
-      }
-    };
-
-    const workers = Array.from(
-      { length: Math.min(CONCURRENCY, files.length) },
-      () => worker()
-    );
-    await Promise.all(workers);
-    reload();
-  };
-
-  const uploadFilesFromDrop = async (fileList: FileList) => {
-    const arr = Array.from(fileList);
-    const existingKeys = new Set(items.map((i) => i.key));
-    const duplicates = arr.filter((f) => existingKeys.has(prefix + f.name));
-
-    if (duplicates.length > 0) {
-      const names = duplicates.map((f) => f.name);
-      const label =
-        names.length <= 3
-          ? names.join(", ")
-          : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
-      const overwrite = await ask(
-        `${label} already exist in this directory. Overwrite?`,
-        { title: "File already exists", kind: "warning", okLabel: "Overwrite", cancelLabel: "Cancel" }
-      );
-      if (!overwrite) return;
-    }
-    doUploadBytes(arr);
+  const handleUploadFolderButton = async () => {
+    const selected = await open({ multiple: false, directory: true, title: "Select folder to upload" });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    doUploadPaths(paths);
   };
 
   // ─── Drag & drop ───────────────────────────────────────────────────────
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    dragCounterRef.current = 0;
     setDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      uploadFilesFromDrop(e.dataTransfer.files);
-    }
   };
 
   // ─── Copy link ─────────────────────────────────────────────────────────
@@ -515,7 +523,6 @@ export function ObjectBrowser({ target }: Props) {
     const hidePrep = message.loading("Preparing download...", 0);
     try {
       const fileKeys = await expandKeys(keys, { filesOnly: true });
-      hidePrep();
       if (!fileKeys.length) {
         message.warning("No files to download");
         return;
@@ -534,9 +541,9 @@ export function ObjectBrowser({ target }: Props) {
         message.success(`Downloaded ${result.downloaded} file(s)`);
       }
     } catch (e: unknown) {
-      hidePrep();
-      message.error(`Download failed: ${(e as Error).message}`);
+      message.error(`Download failed: ${String(e)}`);
     } finally {
+      hidePrep();
       setDownloading(false);
       setDownloadProgress(null);
     }
@@ -772,10 +779,7 @@ export function ObjectBrowser({ target }: Props) {
         dragCounterRef.current--;
         if (dragCounterRef.current === 0) setDragOver(false);
       }}
-      onDrop={(e) => {
-        dragCounterRef.current = 0;
-        onDrop(e);
-      }}
+      onDrop={onDrop}
     >
       {dragOver && (
         <div className="drop-overlay">Drop files to upload</div>
@@ -826,14 +830,19 @@ export function ObjectBrowser({ target }: Props) {
         />
 
         <Space>
-          <Tooltip title="Upload files (or drag & drop)">
-            <Button
-              icon={<UploadOutlined />}
-              onClick={handleUploadButton}
-            >
-              Upload
+          <Dropdown
+            menu={{
+              items: [
+                { key: "files", label: "Upload files", icon: <UploadOutlined />, onClick: handleUploadButton },
+                { key: "folder", label: "Upload folder", icon: <FolderOutlined />, onClick: handleUploadFolderButton },
+              ],
+            }}
+            trigger={["click"]}
+          >
+            <Button icon={<UploadOutlined />}>
+              Upload <DownOutlined style={{ fontSize: 10 }} />
             </Button>
-          </Tooltip>
+          </Dropdown>
           <Tooltip title="New folder">
             <Button
               icon={<FolderAddOutlined />}
@@ -881,7 +890,7 @@ export function ObjectBrowser({ target }: Props) {
       {/* Upload progress */}
       {uploads.length > 0 && (
         <div
-          className="upload-progress-bar"
+          className="transfer-progress-bar"
           style={{
             background: token.colorFillAlter,
             borderBottom: `1px solid ${token.colorBorderSecondary}`,
@@ -890,10 +899,15 @@ export function ObjectBrowser({ target }: Props) {
           {uploads.map((u) => (
             <div key={u.id} style={{ marginBottom: 4 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 12, flex: 1 }}>{u.filename}</Text>
+                <Text
+                  style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  title={u.filename}
+                >
+                  {u.filename}
+                </Text>
                 {u.error && (
                   <Space size={4}>
-                    {u.filePath && u.key && (
+                    {u.filePath && u.relPath && (
                       <Tooltip title="Retry">
                         <Button
                           size="small"
@@ -901,7 +915,7 @@ export function ObjectBrowser({ target }: Props) {
                           icon={<ReloadOutlined />}
                           onClick={() => {
                             setUploads((prev) => prev.filter((t) => t.id !== u.id));
-                            doUploadPaths([u.filePath!]);
+                            doUploadEntries([{ local_path: u.filePath!, relative_path: u.relPath! }]);
                           }}
                         />
                       </Tooltip>
@@ -924,6 +938,50 @@ export function ObjectBrowser({ target }: Props) {
                 size="small"
                 status={u.error ? "exception" : u.done ? "success" : "active"}
                 format={() => u.error ? <Text type="danger" style={{ fontSize: 11 }}>{u.error}</Text> : `${u.progress}%`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Download progress */}
+      {downloads.length > 0 && (
+        <div
+          className="transfer-progress-bar"
+          style={{
+            background: token.colorFillAlter,
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          }}
+        >
+          {downloads.map((d) => (
+            <div key={d.id} style={{ marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Text
+                  style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  title={d.filename}
+                >
+                  {d.filename}
+                </Text>
+                {d.done && (
+                  <Tooltip title="Dismiss">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<CloseCircleOutlined />}
+                      onClick={() => setDownloads((prev) => prev.filter((t) => t.id !== d.id))}
+                    />
+                  </Tooltip>
+                )}
+              </div>
+              <Progress
+                percent={d.progress}
+                size="small"
+                status={d.error ? "exception" : d.done ? "success" : "active"}
+                format={() =>
+                  d.error
+                    ? <Text type="danger" style={{ fontSize: 11 }}>{d.error}</Text>
+                    : `${d.progress}%`
+                }
               />
             </div>
           ))}

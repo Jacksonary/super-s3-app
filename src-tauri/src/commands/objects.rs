@@ -128,7 +128,7 @@ pub async fn list_objects(
             key,
             name,
             item_type: "file".to_string(),
-            size: obj.size().map(|s| s),
+            size: obj.size(),
             last_modified: obj.last_modified().map(|dt| {
                 dt.fmt(aws_smithy_types::date_time::Format::DateTime)
                     .unwrap_or_default()
@@ -182,7 +182,7 @@ pub async fn search_objects(
                 key: key.clone(),
                 name: key,
                 item_type: "file".to_string(),
-                size: obj.size().map(|s| s),
+                size: obj.size(),
                 last_modified: obj.last_modified().map(|dt| {
                     dt.fmt(aws_smithy_types::date_time::Format::DateTime)
                         .unwrap_or_default()

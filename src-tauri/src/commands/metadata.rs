@@ -25,7 +25,7 @@ pub async fn object_meta(
 
     let metadata = resp
         .metadata()
-        .map(|m| m.clone())
+        .cloned()
         .unwrap_or_else(HashMap::new);
 
     Ok(ObjectMeta {

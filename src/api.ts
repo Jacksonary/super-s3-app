@@ -6,6 +6,7 @@ import type {
   ListResult,
   SearchResult,
   DeleteResult,
+  UploadEntry,
 } from "./types";
 
 export const api = {
@@ -80,13 +81,15 @@ export const api = {
     accountId: number,
     bucket: string,
     key: string,
-    savePath: string
+    savePath: string,
+    taskId?: string
   ): Promise<{ success: boolean }> {
     return invoke("download_object", {
       accountIdx: accountId,
       bucket,
       key,
       savePath,
+      taskId: taskId ?? null,
     });
   },
 
@@ -140,6 +143,11 @@ export const api = {
     });
   },
 
+  /** Expand local paths (files or dirs) into a flat {local_path, relative_path}[] list. */
+  expandPaths(paths: string[]): Promise<UploadEntry[]> {
+    return invoke("expand_paths", { paths });
+  },
+
   /** Upload from a local file path (for file dialog picks). */
   uploadObject(
     accountId: number,
@@ -156,23 +164,6 @@ export const api = {
       filePath,
       contentType: contentType ?? null,
       taskId: taskId ?? null,
-    });
-  },
-
-  /** Upload from raw bytes (for drag-drop). */
-  uploadObjectBytes(
-    accountId: number,
-    bucket: string,
-    key: string,
-    data: number[],
-    contentType?: string
-  ): Promise<{ success: boolean; key: string; size: number }> {
-    return invoke("upload_object_bytes", {
-      accountIdx: accountId,
-      bucket,
-      key,
-      data,
-      contentType: contentType ?? null,
     });
   },
 
