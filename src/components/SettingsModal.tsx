@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Modal,
-  Menu,
   Form,
   Input,
   Button,
@@ -30,6 +29,8 @@ import type { AccountConfig, TransferConfig } from "../types";
 
 const { Text } = Typography;
 
+type Section = "accounts" | "general";
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -38,8 +39,6 @@ interface Props {
   isDark: boolean;
   onThemeToggle: () => void;
 }
-
-type Section = "accounts" | "general";
 
 // ─── Account section ──────────────────────────────────────────────────────────
 
@@ -236,7 +235,6 @@ function GeneralSection({
 
   return (
     <div>
-      {/* Theme */}
       <Text strong style={{ fontSize: 13 }}>Appearance</Text>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "10px 0 20px" }}>
         <div>
@@ -249,9 +247,7 @@ function GeneralSection({
 
       <Divider style={{ margin: "0 0 16px" }} />
 
-      {/* Transfer */}
       <Text strong style={{ fontSize: 13 }}>Transfer Performance</Text>
-
       <Form layout="vertical" style={{ marginTop: 12 }}>
         <Form.Item
           label={
@@ -261,55 +257,38 @@ function GeneralSection({
             </Space>
           }
         >
-          <Slider
-            min={1} max={10}
-            marks={{ 1: "1", 5: "5", 10: "10" }}
+          <Slider min={1} max={10} marks={{ 1: "1", 5: "5", 10: "10" }}
             value={cfg.concurrent_files}
-            onChange={(v) => setCfg((p) => ({ ...p, concurrent_files: v }))}
-          />
+            onChange={(v) => setCfg((p) => ({ ...p, concurrent_files: v }))} />
         </Form.Item>
-
         <Form.Item
           label={
             <Space direction="vertical" size={0}>
               <Text strong>Download connections per file</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Parallel Range GET connections for large files (≥100 MB). Increase for high-latency links.
-              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>Parallel Range GET for large files (≥100 MB). Increase for high-latency links.</Text>
             </Space>
           }
         >
-          <Slider
-            min={1} max={20}
-            marks={{ 1: "1", 4: "4", 12: "12", 20: "20" }}
+          <Slider min={1} max={20} marks={{ 1: "1", 4: "4", 12: "12", 20: "20" }}
             value={cfg.download_connections}
-            onChange={(v) => setCfg((p) => ({ ...p, download_connections: v }))}
-          />
+            onChange={(v) => setCfg((p) => ({ ...p, download_connections: v }))} />
         </Form.Item>
-
         <Form.Item
           label={
             <Space direction="vertical" size={0}>
               <Text strong>Upload part concurrency</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Simultaneous multipart chunks for large file uploads (≥100 MB). Each part uses 16 MB memory.
-              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>Simultaneous multipart chunks for large uploads (≥100 MB). Each part uses 16 MB memory.</Text>
             </Space>
           }
         >
-          <Slider
-            min={1} max={16}
-            marks={{ 1: "1", 4: "4", 8: "8", 16: "16" }}
+          <Slider min={1} max={16} marks={{ 1: "1", 4: "4", 8: "8", 16: "16" }}
             value={cfg.upload_part_concurrency}
-            onChange={(v) => setCfg((p) => ({ ...p, upload_part_concurrency: v }))}
-          />
+            onChange={(v) => setCfg((p) => ({ ...p, upload_part_concurrency: v }))} />
         </Form.Item>
-
         <Text type="secondary" style={{ fontSize: 11 }}>
           Memory: up to {cfg.download_connections * 4} MB (download) / {cfg.upload_part_concurrency * 16} MB (upload)
         </Text>
       </Form>
-
       <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
         <Button type="primary" loading={saving} onClick={handleSave}>Save</Button>
         <Button onClick={() => setCfg(TRANSFER_DEFAULTS)}>Reset defaults</Button>
@@ -318,21 +297,72 @@ function GeneralSection({
   );
 }
 
+// ─── Nav item ─────────────────────────────────────────────────────────────────
+
+function NavItem({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  const { token } = theme.useToken();
+  const [hover, setHover] = useState(false);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 14px",
+        margin: "1px 6px",
+        borderRadius: 6,
+        cursor: "pointer",
+        fontSize: 13,
+        fontWeight: active ? 600 : 400,
+        color: active ? token.colorPrimary : token.colorText,
+        background: active
+          ? token.colorPrimaryBg
+          : hover
+          ? token.colorFillTertiary
+          : "transparent",
+        transition: "background 0.15s, color 0.15s",
+        userSelect: "none",
+      }}
+    >
+      <span style={{ fontSize: 14, opacity: active ? 1 : 0.6 }}>{icon}</span>
+      {label}
+    </div>
+  );
+}
+
 // ─── Unified modal ────────────────────────────────────────────────────────────
 
-export function SettingsModal({ open, onClose, onAccountsChange, onTransferConfigChange, isDark, onThemeToggle }: Props) {
+export function SettingsModal({
+  open,
+  onClose,
+  onAccountsChange,
+  onTransferConfigChange,
+  isDark,
+  onThemeToggle,
+}: Props) {
   const { token } = theme.useToken();
   const [section, setSection] = useState<Section>("accounts");
 
-  // Reset to Accounts when re-opened
   useEffect(() => {
     if (open) setSection("accounts");
   }, [open]);
-
-  const menuItems = [
-    { key: "accounts", icon: <UserOutlined />, label: "Accounts" },
-    { key: "general", icon: <ControlOutlined />, label: "General" },
-  ];
 
   return (
     <Modal
@@ -340,27 +370,36 @@ export function SettingsModal({ open, onClose, onAccountsChange, onTransferConfi
       open={open}
       onCancel={onClose}
       footer={null}
-      width={680}
+      width={660}
       destroyOnClose
-      styles={{ body: { padding: 0 } }}
+      styles={{ body: { padding: 0, overflow: "hidden", borderRadius: `0 0 ${token.borderRadiusLG}px ${token.borderRadiusLG}px` } }}
     >
-      <div style={{ display: "flex", minHeight: 420 }}>
+      <div style={{ display: "flex", height: 500 }}>
         {/* Left nav */}
-        <Menu
-          mode="inline"
-          selectedKeys={[section]}
-          onClick={({ key }) => setSection(key as Section)}
-          items={menuItems}
+        <div
           style={{
-            width: 160,
-            borderRight: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: 0,
+            width: 128,
             flexShrink: 0,
+            borderRight: `1px solid ${token.colorBorderSecondary}`,
+            padding: "10px 0",
           }}
-        />
+        >
+          <NavItem
+            active={section === "accounts"}
+            icon={<UserOutlined />}
+            label="Accounts"
+            onClick={() => setSection("accounts")}
+          />
+          <NavItem
+            active={section === "general"}
+            icon={<ControlOutlined />}
+            label="General"
+            onClick={() => setSection("general")}
+          />
+        </div>
 
         {/* Right content */}
-        <div style={{ flex: 1, padding: "16px 20px", overflowY: "auto", maxHeight: 560 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
           {section === "accounts" ? (
             <AccountSection onAccountsChange={onAccountsChange} />
           ) : (
