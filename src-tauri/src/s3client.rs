@@ -1,4 +1,4 @@
-use crate::types::AccountConfig;
+use crate::types::{AccountConfig, TransferConfig};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{BehaviorVersion, Region, SharedCredentialsProvider};
 use aws_smithy_types::checksum_config::{RequestChecksumCalculation, ResponseChecksumValidation};
@@ -133,6 +133,37 @@ pub fn save_config(accounts: &[AccountConfig]) -> Result<(), String> {
 pub fn is_qiniu(endpoint: &str) -> bool {
     let ep = endpoint.to_lowercase();
     ep.contains("qiniucs") || ep.contains("qbox")
+}
+
+fn transfer_config_path() -> PathBuf {
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("super-s3").join("transfer.json")
+}
+
+/// Load transfer performance settings. Returns defaults if the file doesn't exist.
+pub fn load_transfer_config() -> TransferConfig {
+    let path = transfer_config_path();
+    if !path.exists() {
+        return TransferConfig::default();
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Persist transfer performance settings.
+pub fn save_transfer_config(cfg: &TransferConfig) -> Result<(), String> {
+    let path = transfer_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config dir: {e}"))?;
+    }
+    let json = serde_json::to_string_pretty(cfg)
+        .map_err(|e| format!("Failed to serialize transfer config: {e}"))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write transfer config: {e}"))?;
+    Ok(())
 }
 
 /// Get account config by index.

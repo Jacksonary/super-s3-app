@@ -59,6 +59,12 @@ export interface SelectedBucket {
   bucket: string;
 }
 
+export interface TransferConfig {
+  concurrent_files: number;
+  download_connections: number;
+  upload_part_concurrency: number;
+}
+
 export interface UploadEntry {
   local_path: string;
   relative_path: string;

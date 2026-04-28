@@ -7,6 +7,7 @@ import type {
   SearchResult,
   DeleteResult,
   UploadEntry,
+  TransferConfig,
 } from "./types";
 
 export const api = {
@@ -76,13 +77,22 @@ export const api = {
     });
   },
 
+  getTransferConfig(): Promise<TransferConfig> {
+    return invoke("get_transfer_config");
+  },
+
+  putTransferConfig(config: TransferConfig): Promise<{ ok: boolean }> {
+    return invoke("put_transfer_config", { config });
+  },
+
   /** Download S3 object directly to a local file path. */
   download(
     accountId: number,
     bucket: string,
     key: string,
     savePath: string,
-    taskId?: string
+    taskId?: string,
+    connections?: number
   ): Promise<{ success: boolean }> {
     return invoke("download_object", {
       accountIdx: accountId,
@@ -90,6 +100,7 @@ export const api = {
       key,
       savePath,
       taskId: taskId ?? null,
+      connections: connections ?? null,
     });
   },
 
@@ -155,7 +166,8 @@ export const api = {
     key: string,
     filePath: string,
     contentType?: string,
-    taskId?: string
+    taskId?: string,
+    partConcurrency?: number
   ): Promise<{ success: boolean; key: string; size: number }> {
     return invoke("upload_object", {
       accountIdx: accountId,
@@ -164,6 +176,7 @@ export const api = {
       filePath,
       contentType: contentType ?? null,
       taskId: taskId ?? null,
+      partConcurrency: partConcurrency ?? null,
     });
   },
 

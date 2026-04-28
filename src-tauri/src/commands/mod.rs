@@ -3,5 +3,6 @@ pub mod buckets;
 pub mod config;
 pub mod metadata;
 pub mod objects;
+pub mod settings;
 pub mod transfer;
 pub mod update;

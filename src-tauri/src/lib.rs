@@ -21,6 +21,9 @@ pub fn run() {
             commands::objects::delete_objects,
             commands::objects::create_folder,
             commands::objects::rename_object,
+            // Transfer settings
+            commands::settings::get_transfer_config,
+            commands::settings::put_transfer_config,
             // Transfer
             commands::transfer::download_object,
             commands::transfer::batch_download,

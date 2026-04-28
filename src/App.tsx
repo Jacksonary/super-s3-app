@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { Layout, theme, Typography, Empty, ConfigProvider } from "antd";
 import { Sidebar } from "./components/Sidebar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
-import type { SelectedBucket } from "./types";
+import type { SelectedBucket, TransferConfig } from "./types";
+import { api } from "./api";
+
+const DEFAULT_TRANSFER_CONFIG: TransferConfig = {
+  concurrent_files: 5,
+  download_connections: 12,
+  upload_part_concurrency: 4,
+};
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -15,6 +22,11 @@ interface AppContentProps {
 function AppContent({ isDark, onThemeToggle }: AppContentProps) {
   const { token } = theme.useToken();
   const [selected, setSelected] = useState<SelectedBucket | null>(null);
+  const [transferConfig, setTransferConfig] = useState<TransferConfig>(DEFAULT_TRANSFER_CONFIG);
+
+  useEffect(() => {
+    api.getTransferConfig().then(setTransferConfig).catch(() => {});
+  }, []);
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -35,13 +47,18 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
           onSelect={setSelected}
           isDark={isDark}
           onThemeToggle={onThemeToggle}
+          onTransferConfigChange={setTransferConfig}
         />
       </Sider>
 
       <Layout style={{ marginLeft: 240 }}>
         <Content style={{ background: token.colorBgLayout, minHeight: "100vh" }}>
           {selected ? (
-            <ObjectBrowser key={`${selected.accountId}-${selected.bucket}`} target={selected} />
+            <ObjectBrowser
+              key={`${selected.accountId}-${selected.bucket}`}
+              target={selected}
+              transferConfig={transferConfig}
+            />
           ) : (
             <div className="content-center" style={{ height: "100vh" }}>
               <Empty

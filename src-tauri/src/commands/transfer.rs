@@ -66,12 +66,13 @@ pub async fn download_object(
     key: String,
     save_path: String,
     task_id: Option<String>,
+    connections: Option<usize>,
 ) -> Result<serde_json::Value, String> {
     let save = std::path::Path::new(&save_path);
     let tmp_path = tmp_path_for(save);
 
     let result =
-        download_inner(&app, account_idx, &bucket, &key, &tmp_path, &task_id).await;
+        download_inner(&app, account_idx, &bucket, &key, &tmp_path, &task_id, connections).await;
 
     match result {
         Ok(()) => {
@@ -94,29 +95,30 @@ async fn download_inner(
     key: &str,
     tmp_path: &std::path::Path,
     task_id: &Option<String>,
+    connections: Option<usize>,
 ) -> Result<(), String> {
     let client = s3client::get_client(account_idx)?;
 
-    let resp = client
-        .get_object()
+    const RANGE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
+    const RANGE_PART_SIZE: u64 = 4 * 1024 * 1024;   // 4 MB — faster slot turnover
+    const MAX_CONCURRENT_RANGES: usize = 12;          // saturate high-latency links
+
+    let max_concurrent = connections
+        .map(|c| c.clamp(1, 20))
+        .unwrap_or(MAX_CONCURRENT_RANGES);
+
+    // Probe the object size with a lightweight HEAD request so that for large
+    // files we never have to open a full GET connection only to discard the body.
+    let head = client
+        .head_object()
         .bucket(bucket)
         .key(key)
         .send()
         .await
-        .map_err(|e| format!("Failed to download object: {e}"))?;
-
-    let total = resp.content_length().unwrap_or(0) as u64;
-
-    // For large files use parallel Range GETs (each on its own TCP connection),
-    // then write at the correct file offset. For small files, stream directly.
-    // AWS recommends Range fetches for objects > 100 MB.
-    const RANGE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
-    const RANGE_PART_SIZE: u64 = 16 * 1024 * 1024; // 16 MB per range
-    const MAX_CONCURRENT_RANGES: usize = 4;
+        .map_err(|e| format!("Failed to stat object: {e}"))?;
+    let total = head.content_length().unwrap_or(0) as u64;
 
     if total >= RANGE_THRESHOLD {
-        // Drop the initial response body — we'll use Range GETs instead.
-        drop(resp);
 
         // Pre-allocate the file to avoid fragmentation and allow offset writes.
         let file = tokio::fs::OpenOptions::new()
@@ -140,7 +142,7 @@ async fn download_inner(
 
         for part_idx in 0..num_parts {
             // Backpressure: drain one completed range before spawning more.
-            while join_set.len() >= MAX_CONCURRENT_RANGES {
+            while join_set.len() >= max_concurrent {
                 match join_set.join_next().await {
                     Some(Ok(Ok(()))) => {
                         completed_ranges += 1;
@@ -221,7 +223,14 @@ async fn download_inner(
             .await
             .map_err(|e| format!("Failed to flush file: {e}"))?;
     } else {
-        // Small/medium file: single streaming download.
+        // Small/medium file: single streaming GET.
+        let resp = client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download object: {e}"))?;
         let mut body = resp.body;
         let mut file = tokio::fs::File::create(tmp_path)
             .await
@@ -256,6 +265,7 @@ async fn download_inner(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_object(
     app: tauri::AppHandle,
     account_idx: usize,
@@ -264,6 +274,7 @@ pub async fn upload_object(
     file_path: String,
     content_type: Option<String>,
     task_id: Option<String>,
+    part_concurrency: Option<usize>,
 ) -> Result<serde_json::Value, String> {
     let client = s3client::get_client(account_idx)?;
     let ct = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
@@ -276,12 +287,13 @@ pub async fn upload_object(
 
     emit_progress(&app, "upload-progress", &task_id, 0);
 
-    // AWS recommends multipart for files ≥ 100 MB; smaller files use a single PUT.
-    // Part size of 16 MB balances part count, RTT overhead, and memory pressure.
-    // 4 concurrent parts saturates typical broadband without excessive memory use.
     const MULTIPART_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
     const PART_SIZE: usize = 16 * 1024 * 1024; // 16 MB
     const MAX_CONCURRENT_PARTS: usize = 4;
+
+    let max_parts = part_concurrency
+        .map(|c| c.clamp(1, 16))
+        .unwrap_or(MAX_CONCURRENT_PARTS);
 
     if size < MULTIPART_THRESHOLD {
         // Small/medium file: single PUT, no multipart overhead.
@@ -338,8 +350,8 @@ pub async fn upload_object(
 
         loop {
             // Drain one completed part before reading the next chunk when at capacity,
-            // so we never hold more than MAX_CONCURRENT_PARTS chunks in memory at once.
-            while join_set.len() >= MAX_CONCURRENT_PARTS {
+            // so we never hold more than max_parts chunks in memory at once.
+            while join_set.len() >= max_parts {
                 match join_set.join_next().await {
                     Some(Ok(Ok((pnum, etag)))) => completed_parts.push((pnum, etag)),
                     Some(Ok(Err(e))) => {

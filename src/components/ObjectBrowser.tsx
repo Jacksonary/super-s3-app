@@ -46,7 +46,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { api } from "../api";
-import type { ObjectItem, SelectedBucket, UploadEntry } from "../types";
+import type { ObjectItem, SelectedBucket, UploadEntry, TransferConfig } from "../types";
 import { fmtSize, fmtDate } from "../utils";
 import { DetailDrawer } from "./DetailDrawer";
 
@@ -77,9 +77,10 @@ interface DownloadTask {
 
 interface Props {
   target: SelectedBucket;
+  transferConfig: TransferConfig;
 }
 
-export function ObjectBrowser({ target }: Props) {
+export function ObjectBrowser({ target, transferConfig }: Props) {
   const { token } = theme.useToken();
   const { accountId, bucket } = target;
 
@@ -376,7 +377,7 @@ export function ObjectBrowser({ target }: Props) {
     const taskId = `dl-${Date.now()}-${filename}`;
     setDownloads((prev) => [...prev, { id: taskId, filename, progress: 0, done: false }]);
     try {
-      await api.download(accountId, bucket, key, savePath, taskId);
+      await api.download(accountId, bucket, key, savePath, taskId, transferConfig.download_connections);
       setDownloads((prev) =>
         prev.map((d) => d.id === taskId ? { ...d, progress: 100, done: true } : d)
       );
@@ -391,9 +392,10 @@ export function ObjectBrowser({ target }: Props) {
 
   // ─── Upload ────────────────────────────────────────────────────────────
 
-  const CONCURRENCY = 5;
-
   const doUploadEntries = async (entries: UploadEntry[]) => {
+    // Capture concurrency at call time so config changes during an upload
+    // don't affect the already-running worker pool.
+    const concurrency = transferConfig.concurrent_files;
     let idx = 0;
 
     const worker = async () => {
@@ -408,7 +410,7 @@ export function ObjectBrowser({ target }: Props) {
           { id: taskId, filename, progress: 0, done: false, filePath, relPath, key },
         ]);
         try {
-          await api.uploadObject(accountId, bucket, key, filePath, undefined, taskId);
+          await api.uploadObject(accountId, bucket, key, filePath, undefined, taskId, transferConfig.upload_part_concurrency);
           setUploads((prev) =>
             prev.map((u) =>
               u.id === taskId ? { ...u, progress: 100, done: true } : u
@@ -431,7 +433,7 @@ export function ObjectBrowser({ target }: Props) {
     };
 
     const workers = Array.from(
-      { length: Math.min(CONCURRENCY, entries.length) },
+      { length: Math.min(concurrency, entries.length) },
       () => worker()
     );
     await Promise.allSettled(workers);

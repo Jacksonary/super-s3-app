@@ -20,12 +20,14 @@ import {
   MoonOutlined,
   CloudServerOutlined,
   GithubOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
-import type { Account, SelectedBucket } from "../types";
+import type { Account, SelectedBucket, TransferConfig } from "../types";
 import { useUpdateCheck } from "../useUpdateCheck";
 import { ConfigModal } from "./ConfigModal";
+import { TransferSettingsModal } from "./TransferSettingsModal";
 
 const { Text } = Typography;
 
@@ -34,14 +36,16 @@ interface Props {
   onSelect: (sel: SelectedBucket) => void;
   isDark: boolean;
   onThemeToggle: () => void;
+  onTransferConfigChange: (cfg: TransferConfig) => void;
 }
 
-export function Sidebar({ selected, onSelect, isDark, onThemeToggle }: Props) {
+export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferConfigChange }: Props) {
   const { token } = theme.useToken();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [configOpen, setConfigOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const updateInfo = useUpdateCheck(__APP_VERSION__);
 
   const loadAccounts = async () => {
@@ -155,6 +159,12 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle }: Props) {
             style={{ cursor: "pointer", color: token.colorTextSecondary }}
           />
         </Tooltip>
+        <Tooltip title="Transfer settings">
+          <ThunderboltOutlined
+            onClick={() => setTransferOpen(true)}
+            style={{ cursor: "pointer", color: token.colorTextSecondary }}
+          />
+        </Tooltip>
       </div>
 
       {/* Tree */}
@@ -224,6 +234,11 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle }: Props) {
         open={configOpen}
         onClose={() => setConfigOpen(false)}
         onChange={loadAccounts}
+      />
+      <TransferSettingsModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        onSave={onTransferConfigChange}
       />
     </div>
   );

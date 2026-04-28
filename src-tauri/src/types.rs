@@ -1,6 +1,35 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// User-configurable transfer performance settings.
+/// Stored in `~/.config/super-s3/transfer.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferConfig {
+    /// How many files upload/download simultaneously. Range 1–10.
+    #[serde(default = "default_concurrent_files")]
+    pub concurrent_files: usize,
+    /// Parallel Range GET connections for a single large file download. Range 1–20.
+    #[serde(default = "default_download_connections")]
+    pub download_connections: usize,
+    /// Concurrent multipart parts for a single large file upload. Range 1–16.
+    #[serde(default = "default_upload_part_concurrency")]
+    pub upload_part_concurrency: usize,
+}
+
+fn default_concurrent_files() -> usize { 5 }
+fn default_download_connections() -> usize { 12 }
+fn default_upload_part_concurrency() -> usize { 4 }
+
+impl Default for TransferConfig {
+    fn default() -> Self {
+        Self {
+            concurrent_files: default_concurrent_files(),
+            download_connections: default_download_connections(),
+            upload_part_concurrency: default_upload_part_concurrency(),
+        }
+    }
+}
+
 /// YAML config entry — one S3-compatible account.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountConfig {
