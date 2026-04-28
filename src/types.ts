@@ -65,6 +65,27 @@ export interface TransferConfig {
   upload_part_concurrency: number;
 }
 
+export interface UploadTask {
+  id: string;
+  filename: string;
+  progress: number;
+  done: boolean;
+  error?: string;
+  filePath?: string;
+  relPath?: string;
+  key?: string;
+  /** Pre-bound retry callback stored at task creation time. */
+  retry?: () => void;
+}
+
+export interface DownloadTask {
+  id: string;
+  filename: string;
+  progress: number;
+  done: boolean;
+  error?: string;
+}
+
 export interface UploadEntry {
   local_path: string;
   relative_path: string;

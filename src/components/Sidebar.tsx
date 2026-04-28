@@ -14,20 +14,15 @@ import {
   DatabaseOutlined,
   InboxOutlined,
   LoadingOutlined,
-  ReloadOutlined,
   SettingOutlined,
-  SunOutlined,
-  MoonOutlined,
   CloudServerOutlined,
   GithubOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import type { Account, SelectedBucket, TransferConfig } from "../types";
 import { useUpdateCheck } from "../useUpdateCheck";
-import { ConfigModal } from "./ConfigModal";
-import { TransferSettingsModal } from "./TransferSettingsModal";
+import { SettingsModal } from "./SettingsModal";
 
 const { Text } = Typography;
 
@@ -44,8 +39,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [configOpen, setConfigOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const updateInfo = useUpdateCheck(__APP_VERSION__);
 
   const loadAccounts = async () => {
@@ -140,28 +134,9 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
           <CloudServerOutlined style={{ fontSize: 18, color: token.colorPrimary }} />
           <Text strong style={{ fontSize: 15 }}>Super S3</Text>
         </Space>
-        <Tooltip title={isDark ? "Light mode" : "Dark mode"}>
-          {isDark
-            ? <SunOutlined onClick={onThemeToggle} style={{ cursor: "pointer", color: token.colorTextSecondary }} />
-            : <MoonOutlined onClick={onThemeToggle} style={{ cursor: "pointer", color: token.colorTextSecondary }} />
-          }
-        </Tooltip>
-        <Tooltip title="Reload accounts">
-          <ReloadOutlined
-            spin={loading}
-            onClick={loadAccounts}
-            style={{ cursor: "pointer", color: token.colorTextSecondary }}
-          />
-        </Tooltip>
-        <Tooltip title="Account management">
+        <Tooltip title="Settings">
           <SettingOutlined
-            onClick={() => setConfigOpen(true)}
-            style={{ cursor: "pointer", color: token.colorTextSecondary }}
-          />
-        </Tooltip>
-        <Tooltip title="Transfer settings">
-          <ThunderboltOutlined
-            onClick={() => setTransferOpen(true)}
+            onClick={() => setSettingsOpen(true)}
             style={{ cursor: "pointer", color: token.colorTextSecondary }}
           />
         </Tooltip>
@@ -230,15 +205,13 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
         </Space>
       </div>
 
-      <ConfigModal
-        open={configOpen}
-        onClose={() => setConfigOpen(false)}
-        onChange={loadAccounts}
-      />
-      <TransferSettingsModal
-        open={transferOpen}
-        onClose={() => setTransferOpen(false)}
-        onSave={onTransferConfigChange}
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onAccountsChange={loadAccounts}
+        onTransferConfigChange={onTransferConfigChange}
+        isDark={isDark}
+        onThemeToggle={onThemeToggle}
       />
     </div>
   );

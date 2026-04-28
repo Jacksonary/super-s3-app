@@ -1,0 +1,377 @@
+import { useEffect, useState } from "react";
+import {
+  Modal,
+  Menu,
+  Form,
+  Input,
+  Button,
+  List,
+  Popconfirm,
+  Space,
+  Tag,
+  Slider,
+  Switch,
+  Spin,
+  Typography,
+  Divider,
+  message,
+  theme,
+} from "antd";
+import {
+  UserOutlined,
+  ControlOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  DatabaseOutlined,
+} from "@ant-design/icons";
+import { api } from "../api";
+import type { AccountConfig, TransferConfig } from "../types";
+
+const { Text } = Typography;
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  onAccountsChange: () => void;
+  onTransferConfigChange: (cfg: TransferConfig) => void;
+  isDark: boolean;
+  onThemeToggle: () => void;
+}
+
+type Section = "accounts" | "general";
+
+// ─── Account section ──────────────────────────────────────────────────────────
+
+const EMPTY_ACCOUNT: AccountConfig = {
+  name: "",
+  ak: "",
+  sk: "",
+  endpoint: "",
+  region: "",
+  buckets: [],
+};
+
+function AccountSection({ onAccountsChange }: { onAccountsChange: () => void }) {
+  const { token } = theme.useToken();
+  const [accounts, setAccounts] = useState<AccountConfig[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [form] = Form.useForm<AccountConfig & { bucketsRaw: string }>();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      setAccounts(await api.getConfig());
+    } catch {
+      message.error("Failed to load config");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async (list: AccountConfig[]) => {
+    setSaving(true);
+    try {
+      await api.putConfig(list);
+      setAccounts(list);
+      onAccountsChange();
+      message.success("Saved");
+      return true;
+    } catch {
+      message.error("Failed to save");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAdd = () => {
+    setEditing(-1);
+    form.setFieldsValue({ ...EMPTY_ACCOUNT, bucketsRaw: "" });
+  };
+
+  const openEdit = (idx: number) => {
+    setEditing(idx);
+    const a = accounts[idx];
+    form.setFieldsValue({ ...a, bucketsRaw: a.buckets.join("\n") });
+  };
+
+  const cancel = () => { setEditing(null); form.resetFields(); };
+
+  const submit = async () => {
+    const v = await form.validateFields();
+    const acct: AccountConfig = {
+      name: v.name || undefined,
+      ak: v.ak,
+      sk: v.sk,
+      endpoint: v.endpoint,
+      region: v.region,
+      buckets: v.bucketsRaw
+        ? v.bucketsRaw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
+        : [],
+    };
+    const next = [...accounts];
+    if (editing === -1) next.push(acct); else next[editing!] = acct;
+    if (await save(next)) cancel();
+  };
+
+  if (editing !== null) {
+    return (
+      <Form form={form} layout="vertical" onFinish={submit}>
+        <Form.Item label="Display Name" name="name">
+          <Input placeholder="Auto-detect if left empty" />
+        </Form.Item>
+        <Form.Item label="Access Key" name="ak" rules={[{ required: true, message: "Required" }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item label="Secret Key" name="sk" rules={[{ required: true, message: "Required" }]}>
+          <Input.Password />
+        </Form.Item>
+        <Form.Item label="Endpoint" name="endpoint" rules={[{ required: true, message: "Required" }]}>
+          <Input placeholder="https://obs.cn-east-3.myhuaweicloud.com" />
+        </Form.Item>
+        <Form.Item label="Region" name="region" rules={[{ required: true, message: "Required" }]}>
+          <Input placeholder="cn-east-3" />
+        </Form.Item>
+        <Form.Item label="Buckets" name="bucketsRaw" extra="One per line. Leave empty to list all.">
+          <Input.TextArea rows={3} placeholder={"my-bucket-1\nmy-bucket-2"} />
+        </Form.Item>
+        <Form.Item style={{ marginBottom: 0 }}>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={saving}>Save</Button>
+            <Button onClick={cancel}>Cancel</Button>
+          </Space>
+        </Form.Item>
+      </Form>
+    );
+  }
+
+  return (
+    <Spin spinning={loading}>
+      <List
+        dataSource={accounts}
+        locale={{ emptyText: "No accounts. Click below to add one." }}
+        renderItem={(acct, idx) => (
+          <List.Item
+            style={{ padding: "10px 4px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}
+            actions={[
+              <Button key="edit" type="text" icon={<EditOutlined />} size="small" onClick={() => openEdit(idx)} />,
+              <Popconfirm
+                key="del"
+                title="Delete this account?"
+                onConfirm={() => save(accounts.filter((_, i) => i !== idx))}
+                okText="Delete"
+                cancelText="Cancel"
+                okButtonProps={{ danger: true }}
+              >
+                <Button type="text" icon={<DeleteOutlined />} size="small" danger />
+              </Popconfirm>,
+            ]}
+          >
+            <List.Item.Meta
+              avatar={<DatabaseOutlined style={{ fontSize: 18, color: token.colorPrimary, marginTop: 2 }} />}
+              title={<Text strong>{acct.name || acct.endpoint || "Unnamed Account"}</Text>}
+              description={
+                <Space size={4} wrap>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{acct.endpoint}</Text>
+                  {acct.buckets.slice(0, 3).map((b) => (
+                    <Tag key={b} style={{ fontSize: 11 }}>{b}</Tag>
+                  ))}
+                  {acct.buckets.length > 3 && (
+                    <Tag style={{ fontSize: 11 }}>+{acct.buckets.length - 3}</Tag>
+                  )}
+                </Space>
+              }
+            />
+          </List.Item>
+        )}
+      />
+      <Button type="dashed" icon={<PlusOutlined />} block style={{ marginTop: 12 }} onClick={openAdd}>
+        Add Account
+      </Button>
+    </Spin>
+  );
+}
+
+// ─── General section ──────────────────────────────────────────────────────────
+
+const TRANSFER_DEFAULTS: TransferConfig = {
+  concurrent_files: 5,
+  download_connections: 12,
+  upload_part_concurrency: 4,
+};
+
+function GeneralSection({
+  isDark,
+  onThemeToggle,
+  onTransferConfigChange,
+}: {
+  isDark: boolean;
+  onThemeToggle: () => void;
+  onTransferConfigChange: (cfg: TransferConfig) => void;
+}) {
+  const [cfg, setCfg] = useState<TransferConfig>(TRANSFER_DEFAULTS);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.getTransferConfig().then(setCfg).catch(() => setCfg(TRANSFER_DEFAULTS));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.putTransferConfig(cfg);
+      onTransferConfigChange(cfg);
+      message.success("Settings saved");
+    } catch (e) {
+      message.error(`Failed to save: ${String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Theme */}
+      <Text strong style={{ fontSize: 13 }}>Appearance</Text>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "10px 0 20px" }}>
+        <div>
+          <Text>Dark mode</Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 12 }}>Switch between light and dark interface</Text>
+        </div>
+        <Switch checked={isDark} onChange={onThemeToggle} />
+      </div>
+
+      <Divider style={{ margin: "0 0 16px" }} />
+
+      {/* Transfer */}
+      <Text strong style={{ fontSize: 13 }}>Transfer Performance</Text>
+
+      <Form layout="vertical" style={{ marginTop: 12 }}>
+        <Form.Item
+          label={
+            <Space direction="vertical" size={0}>
+              <Text strong>Concurrent files</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>How many files upload or download simultaneously</Text>
+            </Space>
+          }
+        >
+          <Slider
+            min={1} max={10}
+            marks={{ 1: "1", 5: "5", 10: "10" }}
+            value={cfg.concurrent_files}
+            onChange={(v) => setCfg((p) => ({ ...p, concurrent_files: v }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={
+            <Space direction="vertical" size={0}>
+              <Text strong>Download connections per file</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Parallel Range GET connections for large files (≥100 MB). Increase for high-latency links.
+              </Text>
+            </Space>
+          }
+        >
+          <Slider
+            min={1} max={20}
+            marks={{ 1: "1", 4: "4", 12: "12", 20: "20" }}
+            value={cfg.download_connections}
+            onChange={(v) => setCfg((p) => ({ ...p, download_connections: v }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={
+            <Space direction="vertical" size={0}>
+              <Text strong>Upload part concurrency</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Simultaneous multipart chunks for large file uploads (≥100 MB). Each part uses 16 MB memory.
+              </Text>
+            </Space>
+          }
+        >
+          <Slider
+            min={1} max={16}
+            marks={{ 1: "1", 4: "4", 8: "8", 16: "16" }}
+            value={cfg.upload_part_concurrency}
+            onChange={(v) => setCfg((p) => ({ ...p, upload_part_concurrency: v }))}
+          />
+        </Form.Item>
+
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          Memory: up to {cfg.download_connections * 4} MB (download) / {cfg.upload_part_concurrency * 16} MB (upload)
+        </Text>
+      </Form>
+
+      <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+        <Button type="primary" loading={saving} onClick={handleSave}>Save</Button>
+        <Button onClick={() => setCfg(TRANSFER_DEFAULTS)}>Reset defaults</Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Unified modal ────────────────────────────────────────────────────────────
+
+export function SettingsModal({ open, onClose, onAccountsChange, onTransferConfigChange, isDark, onThemeToggle }: Props) {
+  const { token } = theme.useToken();
+  const [section, setSection] = useState<Section>("accounts");
+
+  // Reset to Accounts when re-opened
+  useEffect(() => {
+    if (open) setSection("accounts");
+  }, [open]);
+
+  const menuItems = [
+    { key: "accounts", icon: <UserOutlined />, label: "Accounts" },
+    { key: "general", icon: <ControlOutlined />, label: "General" },
+  ];
+
+  return (
+    <Modal
+      title="Settings"
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={680}
+      destroyOnClose
+      styles={{ body: { padding: 0 } }}
+    >
+      <div style={{ display: "flex", minHeight: 420 }}>
+        {/* Left nav */}
+        <Menu
+          mode="inline"
+          selectedKeys={[section]}
+          onClick={({ key }) => setSection(key as Section)}
+          items={menuItems}
+          style={{
+            width: 160,
+            borderRight: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: 0,
+            flexShrink: 0,
+          }}
+        />
+
+        {/* Right content */}
+        <div style={{ flex: 1, padding: "16px 20px", overflowY: "auto", maxHeight: 560 }}>
+          {section === "accounts" ? (
+            <AccountSection onAccountsChange={onAccountsChange} />
+          ) : (
+            <GeneralSection
+              isDark={isDark}
+              onThemeToggle={onThemeToggle}
+              onTransferConfigChange={onTransferConfigChange}
+            />
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}

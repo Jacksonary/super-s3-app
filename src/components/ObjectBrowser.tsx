@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";import {
   Table,
   Button,
   Space,
@@ -46,41 +45,25 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { api } from "../api";
-import type { ObjectItem, SelectedBucket, UploadEntry, TransferConfig } from "../types";
+import type { ObjectItem, SelectedBucket, UploadEntry, TransferConfig, UploadTask, DownloadTask } from "../types";
 import { fmtSize, fmtDate } from "../utils";
 import { DetailDrawer } from "./DetailDrawer";
 
 const { Text } = Typography;
-
-// ─── UploadQueue ────────────────────────────────────────────────────────────
-
-interface UploadTask {
-  id: string;
-  filename: string;
-  progress: number;
-  done: boolean;
-  error?: string;
-  filePath?: string;
-  relPath?: string;
-  key?: string;
-}
-
-interface DownloadTask {
-  id: string;
-  filename: string;
-  progress: number;
-  done: boolean;
-  error?: string;
-}
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
 interface Props {
   target: SelectedBucket;
   transferConfig: TransferConfig;
+  uploads: UploadTask[];
+  downloads: DownloadTask[];
+  setUploads: React.Dispatch<React.SetStateAction<UploadTask[]>>;
+  setDownloads: React.Dispatch<React.SetStateAction<DownloadTask[]>>;
+  uploadTaskCounter: React.MutableRefObject<number>;
 }
 
-export function ObjectBrowser({ target, transferConfig }: Props) {
+export function ObjectBrowser({ target, transferConfig, uploads, downloads, setUploads, setDownloads, uploadTaskCounter }: Props) {
   const { token } = theme.useToken();
   const { accountId, bucket } = target;
 
@@ -101,12 +84,7 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
   const pageSizeRef = useRef(10);
   const pageTokensRef = useRef<(string | undefined)[]>([undefined]);
 
-  // upload
-  const [uploads, setUploads] = useState<UploadTask[]>([]);
-  const uploadTaskCounter = useRef(0);
-
-  // single-file download progress
-  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
+  // upload/download state is managed by App.tsx and passed via props
 
   // folder modal
   const [folderModal, setFolderModal] = useState(false);
@@ -131,28 +109,9 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
     currentKey: string;
   } | null>(null);
 
-  // Listen for upload / download progress events from Rust
+  // Listen for batch download progress events from Rust.
+  // upload-progress and download-single-progress are handled in App.tsx.
   useEffect(() => {
-    const unlistenUpload = listen<{ task_id: string; progress: number }>(
-      "upload-progress",
-      (event) => {
-        const { task_id, progress } = event.payload;
-        setUploads((prev) =>
-          prev.map((u) =>
-            u.id === task_id ? { ...u, progress } : u
-          )
-        );
-      }
-    );
-    const unlistenDownloadSingle = listen<{ task_id: string; progress: number }>(
-      "download-single-progress",
-      (event) => {
-        const { task_id, progress } = event.payload;
-        setDownloads((prev) =>
-          prev.map((d) => d.id === task_id ? { ...d, progress } : d)
-        );
-      }
-    );
     const unlistenDownload = listen<{
       total: number;
       completed: number;
@@ -163,8 +122,6 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
       setDownloadProgress({ total, completed, failed, currentKey: current_key });
     });
     return () => {
-      unlistenUpload.then((fn) => fn());
-      unlistenDownloadSingle.then((fn) => fn());
       unlistenDownload.then((fn) => fn());
     };
   }, []);
@@ -392,7 +349,7 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
 
   // ─── Upload ────────────────────────────────────────────────────────────
 
-  const doUploadEntries = async (entries: UploadEntry[]) => {
+  const doUploadEntries = useCallback(async (entries: UploadEntry[]) => {
     // Capture concurrency at call time so config changes during an upload
     // don't affect the already-running worker pool.
     const concurrency = transferConfig.concurrent_files;
@@ -405,9 +362,14 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
         const filename = relPath;
         const taskId = `upload-${++uploadTaskCounter.current}-${relPath.replace(/\//g, "-")}`;
         const key = prefix + relPath;
+        // Store retry callback in the task so TransferPanel can trigger it.
+        const retry = () => {
+          setUploads((prev) => prev.filter((u) => u.id !== taskId));
+          doUploadEntries([{ local_path: filePath, relative_path: relPath }]);
+        };
         setUploads((prev) => [
           ...prev,
-          { id: taskId, filename, progress: 0, done: false, filePath, relPath, key },
+          { id: taskId, filename, progress: 0, done: false, filePath, relPath, key, retry },
         ]);
         try {
           await api.uploadObject(accountId, bucket, key, filePath, undefined, taskId, transferConfig.upload_part_concurrency);
@@ -438,7 +400,7 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
     );
     await Promise.allSettled(workers);
     reload();
-  };
+  }, [transferConfig, setUploads, uploadTaskCounter, prefix, accountId, bucket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Expand paths, check duplicates, then upload. */
   const doUploadPaths = async (paths: string[]) => {
@@ -568,7 +530,7 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
   const handleRename = async () => {
     if (!renameItem) return;
     const values = await renameForm.validateFields();
-    const newName = (values.name as string).trim();
+    const newName = String(values.name ?? "").trim();
     if (!newName) return;
     const parts = renameItem.key.split("/");
     parts[parts.length - 1] = newName;
@@ -593,7 +555,7 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
 
   const handleCreateFolder = async () => {
     const values = await folderForm.validateFields();
-    const folderName = (values.name as string).trim().replace(/\/$/, "");
+    const folderName = String(values.name ?? "").trim().replace(/\/$/, "");
     if (!folderName) return;
     try {
       await api.createFolder(accountId, bucket, prefix + folderName);
@@ -894,107 +856,6 @@ export function ObjectBrowser({ target, transferConfig }: Props) {
           </Tooltip>
         </Space>
       </div>
-
-      {/* Upload progress */}
-      {uploads.length > 0 && (
-        <div
-          className="transfer-progress-bar"
-          style={{
-            background: token.colorFillAlter,
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          {uploads.map((u) => (
-            <div key={u.id} style={{ marginBottom: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Text
-                  style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  title={u.filename}
-                >
-                  {u.filename}
-                </Text>
-                {u.error && (
-                  <Space size={4}>
-                    {u.filePath && u.relPath && (
-                      <Tooltip title="Retry">
-                        <Button
-                          size="small"
-                          type="text"
-                          icon={<ReloadOutlined />}
-                          onClick={() => {
-                            setUploads((prev) => prev.filter((t) => t.id !== u.id));
-                            doUploadEntries([{ local_path: u.filePath!, relative_path: u.relPath! }]);
-                          }}
-                        />
-                      </Tooltip>
-                    )}
-                    <Tooltip title="Dismiss">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<CloseCircleOutlined />}
-                        onClick={() =>
-                          setUploads((prev) => prev.filter((t) => t.id !== u.id))
-                        }
-                      />
-                    </Tooltip>
-                  </Space>
-                )}
-              </div>
-              <Progress
-                percent={u.progress}
-                size="small"
-                status={u.error ? "exception" : u.done ? "success" : "active"}
-                format={() => u.error ? <Text type="danger" style={{ fontSize: 11 }}>{u.error}</Text> : `${u.progress}%`}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Download progress */}
-      {downloads.length > 0 && (
-        <div
-          className="transfer-progress-bar"
-          style={{
-            background: token.colorFillAlter,
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          {downloads.map((d) => (
-            <div key={d.id} style={{ marginBottom: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Text
-                  style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  title={d.filename}
-                >
-                  {d.filename}
-                </Text>
-                {d.done && (
-                  <Tooltip title="Dismiss">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<CloseCircleOutlined />}
-                      onClick={() => setDownloads((prev) => prev.filter((t) => t.id !== d.id))}
-                    />
-                  </Tooltip>
-                )}
-              </div>
-              <Progress
-                percent={d.progress}
-                size="small"
-                status={d.error ? "exception" : d.done ? "success" : "active"}
-                format={() =>
-                  d.error
-                    ? <Text type="danger" style={{ fontSize: 11 }}>{d.error}</Text>
-                    : `${d.progress}%`
-                }
-              />
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Table */}
       <div className="table-container" style={{ background: token.colorBgContainer }}>

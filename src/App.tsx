@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Layout, theme, Typography, Empty, ConfigProvider } from "antd";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
-import type { SelectedBucket, TransferConfig } from "./types";
+import { TransferPanel } from "./components/TransferPanel";
+import type { SelectedBucket, TransferConfig, UploadTask, DownloadTask } from "./types";
 import { api } from "./api";
 
 const DEFAULT_TRANSFER_CONFIG: TransferConfig = {
@@ -24,9 +26,54 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
   const [selected, setSelected] = useState<SelectedBucket | null>(null);
   const [transferConfig, setTransferConfig] = useState<TransferConfig>(DEFAULT_TRANSFER_CONFIG);
 
+  // ─── Global transfer state ──────────────────────────────────────────────
+  // Lifted above ObjectBrowser so tasks survive bucket switches.
+  const [uploads, setUploads] = useState<UploadTask[]>([]);
+  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
+
+  // Monotonic counter for unique task IDs — shared across bucket switches.
+  const uploadTaskCounter = useRef(0);
+
   useEffect(() => {
     api.getTransferConfig().then(setTransferConfig).catch(() => {});
   }, []);
+
+  // Global event listeners for transfer progress.
+  useEffect(() => {
+    const unlistenUpload = listen<{ task_id: string; progress: number }>(
+      "upload-progress",
+      (event) => {
+        const { task_id, progress } = event.payload;
+        setUploads((prev) =>
+          prev.map((u) => (u.id === task_id ? { ...u, progress } : u))
+        );
+      }
+    );
+    const unlistenDownload = listen<{ task_id: string; progress: number }>(
+      "download-single-progress",
+      (event) => {
+        const { task_id, progress } = event.payload;
+        setDownloads((prev) =>
+          prev.map((d) => (d.id === task_id ? { ...d, progress } : d))
+        );
+      }
+    );
+    return () => {
+      unlistenUpload.then((fn) => fn());
+      unlistenDownload.then((fn) => fn());
+    };
+  }, []);
+
+  const handleDismissUpload = (id: string) =>
+    setUploads((prev) => prev.filter((u) => u.id !== id));
+
+  const handleDismissDownload = (id: string) =>
+    setDownloads((prev) => prev.filter((d) => d.id !== id));
+
+  const handleClearAll = () => {
+    setUploads((prev) => prev.filter((u) => !u.done));
+    setDownloads((prev) => prev.filter((d) => !d.done));
+  };
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -58,6 +105,11 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
               key={`${selected.accountId}-${selected.bucket}`}
               target={selected}
               transferConfig={transferConfig}
+              uploads={uploads}
+              downloads={downloads}
+              setUploads={setUploads}
+              setDownloads={setDownloads}
+              uploadTaskCounter={uploadTaskCounter}
             />
           ) : (
             <div className="content-center" style={{ height: "100vh" }}>
@@ -73,6 +125,14 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
           )}
         </Content>
       </Layout>
+
+      <TransferPanel
+        uploads={uploads}
+        downloads={downloads}
+        onDismissUpload={handleDismissUpload}
+        onDismissDownload={handleDismissDownload}
+        onClearAll={handleClearAll}
+      />
     </Layout>
   );
 }
