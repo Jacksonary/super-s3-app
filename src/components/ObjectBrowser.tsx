@@ -423,6 +423,9 @@ export function ObjectBrowser({ target }: Props) {
               u.id === taskId ? { ...u, error: String(e), done: true } : u
             )
           );
+          setTimeout(() => {
+            setUploads((prev) => prev.filter((u) => u.id !== taskId));
+          }, 5000);
         }
       }
     };

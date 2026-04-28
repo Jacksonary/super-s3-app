@@ -2,7 +2,25 @@ use crate::types::AccountConfig;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{BehaviorVersion, Region, SharedCredentialsProvider};
 use aws_smithy_types::checksum_config::{RequestChecksumCalculation, ResponseChecksumValidation};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+// ─── Client cache ────────────────────────────────────────────────────────────
+//
+// Each unique (endpoint, ak, region) combination gets one Client that lives for
+// the process lifetime.  Cloning an aws_sdk_s3::Client is cheap (Arc clone) and
+// all clones share the same underlying HTTP connection pool, so concurrent
+// requests from the same account reuse established TCP connections.
+//
+// The cache key is account_idx.  If the user edits credentials the app restarts,
+// so stale entries are not a concern.
+
+static CLIENT_CACHE: OnceLock<Mutex<HashMap<usize, aws_sdk_s3::Client>>> = OnceLock::new();
+
+fn client_cache() -> &'static Mutex<HashMap<usize, aws_sdk_s3::Client>> {
+    CLIENT_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Detect cloud provider name from endpoint URL.
 pub fn provider_name(endpoint: &str) -> String {
@@ -38,6 +56,9 @@ pub fn provider_name(endpoint: &str) -> String {
 }
 
 /// Build an S3 client for the given account config.
+///
+/// Callers should prefer `get_client()` which caches the result so that
+/// all requests for the same account share a single HTTP connection pool.
 pub fn make_client(account: &AccountConfig) -> aws_sdk_s3::Client {
     let ep = account.endpoint.to_lowercase();
     let is_tos =
@@ -124,14 +145,37 @@ pub fn get_account(account_idx: usize) -> Result<AccountConfig, String> {
 }
 
 /// Get client for account by index.
+///
+/// The client is cached for the process lifetime so that all calls for the
+/// same account share one HTTP connection pool — TCP connections are kept alive
+/// and reused across requests, which is especially important for concurrent
+/// multipart uploads and parallel range downloads.
 pub fn get_client(account_idx: usize) -> Result<aws_sdk_s3::Client, String> {
+    {
+        let cache = client_cache().lock().unwrap();
+        if let Some(client) = cache.get(&account_idx) {
+            return Ok(client.clone());
+        }
+    }
+    // Not yet cached — build and insert.
     let account = get_account(account_idx)?;
-    Ok(make_client(&account))
+    let client = make_client(&account);
+    client_cache()
+        .lock()
+        .unwrap()
+        .insert(account_idx, client.clone());
+    Ok(client)
+}
+
+/// Evict all cached clients.  Call after the user saves new credentials so
+/// the next request picks up fresh keys instead of using stale ones.
+pub fn invalidate_client_cache() {
+    client_cache().lock().unwrap().clear();
 }
 
 /// Get client together with the endpoint string.
 pub fn get_client_with_endpoint(account_idx: usize) -> Result<(aws_sdk_s3::Client, String), String> {
     let account = get_account(account_idx)?;
     let endpoint = account.endpoint.clone();
-    Ok((make_client(&account), endpoint))
+    Ok((get_client(account_idx)?, endpoint))
 }

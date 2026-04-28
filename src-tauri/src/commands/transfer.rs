@@ -144,7 +144,7 @@ async fn download_inner(
                 match join_set.join_next().await {
                     Some(Ok(Ok(()))) => {
                         completed_ranges += 1;
-                        let pct = ((completed_ranges * 99) / num_parts).min(99) as u8;
+                        let pct = ((completed_ranges * 100) / num_parts).min(99) as u8;
                         emit_progress(app, "download-single-progress", task_id, pct);
                     }
                     Some(Ok(Err(e))) => {
@@ -200,7 +200,7 @@ async fn download_inner(
             match result {
                 Ok(Ok(())) => {
                     completed_ranges += 1;
-                    let pct = ((completed_ranges * 99) / num_parts).min(99) as u8;
+                    let pct = ((completed_ranges * 100) / num_parts).min(99) as u8;
                     emit_progress(app, "download-single-progress", task_id, pct);
                 }
                 Ok(Err(e)) => {
@@ -238,7 +238,7 @@ async fn download_inner(
                 .map_err(|e| format!("Failed to write file: {e}"))?;
             received += bytes.len() as u64;
             if total > 0 {
-                let pct = (((received as u128 * 99) / total as u128).min(99)) as u8;
+                let pct = (((received as u128 * 100) / total as u128).min(99)) as u8;
                 if pct > last_pct {
                     last_pct = pct;
                     emit_progress(app, "download-single-progress", task_id, pct);
@@ -355,7 +355,7 @@ pub async fn upload_object(
                     None => break,
                 }
                 let done = completed_parts.len() as u32;
-                let pct = ((done * 99) / total_parts).min(99) as u8;
+                let pct = ((done * 100) / total_parts).min(99) as u8;
                 emit_progress(&app, "upload-progress", &task_id, pct);
             }
 
@@ -416,7 +416,7 @@ pub async fn upload_object(
                 }
             }
             let done = completed_parts.len() as u32;
-            let pct = ((done * 99) / total_parts).min(99) as u8;
+            let pct = ((done * 100) / total_parts).min(99) as u8;
             emit_progress(&app, "upload-progress", &task_id, pct);
         }
 
