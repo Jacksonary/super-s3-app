@@ -80,7 +80,7 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
       <Sider
         width={240}
         style={{
-          background: token.colorBgContainer,
+          background: "transparent",
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           overflow: "hidden",
           height: "100vh",
@@ -116,8 +116,8 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
-                  <Text type="secondary">
-                    Select a bucket from the sidebar to start browsing
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    Select a bucket to start browsing
                   </Text>
                 }
               />

@@ -1,85 +1,232 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Super S3 · Global Stylesheet
+   Design: clean, purposeful, premium desktop-app feel
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbars — light mode */
+/* ─── Scrollbars ────────────────────────────────────────────────────────────── */
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 99px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
+  background: rgba(0, 0, 0, 0.22);
 }
-
-/* Scrollbars — dark mode */
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: #434343;
+  background: rgba(255, 255, 255, 0.1);
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #595959;
+  background: rgba(255, 255, 255, 0.18);
 }
 
-/* Sidebar */
+/* ─── Sidebar ───────────────────────────────────────────────────────────────── */
+
 .sidebar-container {
   width: 240px;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Cool neutral gradient for premium depth */
+  background: linear-gradient(180deg, #f5f6f8 0%, #f1f3f6 100%);
 }
+
+[data-theme="dark"] .sidebar-container {
+  background: linear-gradient(180deg, #1c1d20 0%, #18191c 100%);
+}
+
+/* ─── Sidebar Header ────────────────────────────────────────────────────────── */
 
 .sidebar-header {
-  padding: 14px 16px 10px;
+  padding: 14px 14px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+[data-theme="dark"] .sidebar-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+/* App logo pill */
+.app-logo-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.app-logo-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1677ff 0%, #0950d6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.4);
+}
+
+[data-theme="dark"] .app-logo-icon {
+  box-shadow: 0 2px 10px rgba(22, 119, 255, 0.5);
+}
+
+/* Settings button */
+.settings-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .settings-btn {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+[data-theme="dark"] .settings-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ─── Sidebar Tree ──────────────────────────────────────────────────────────── */
+
+.sidebar-tree-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 4px;
+}
+
+.sidebar-tree .ant-tree-treenode {
+  padding: 1px 4px 1px !important;
+}
+
+.sidebar-tree .ant-tree-node-content-wrapper {
+  border-radius: 7px !important;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: background 0.12s ease !important;
+}
+
+.sidebar-tree .ant-tree-node-content-wrapper:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="dark"] .sidebar-tree .ant-tree-node-content-wrapper:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.sidebar-tree .ant-tree-node-selected .ant-tree-node-content-wrapper {
+  background: rgba(22, 119, 255, 0.09) !important;
+}
+
+[data-theme="dark"] .sidebar-tree .ant-tree-node-selected .ant-tree-node-content-wrapper {
+  background: rgba(22, 119, 255, 0.17) !important;
+}
+
+/* ─── Sidebar Footer ────────────────────────────────────────────────────────── */
+
 .sidebar-footer {
-  padding: 8px 16px;
+  padding: 8px 14px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .sidebar-footer {
+  border-top-color: rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-icon-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
   line-height: 1;
+  border-radius: 5px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.sidebar-tree .ant-tree-node-content-wrapper {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.sidebar-icon-link:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.65) !important;
 }
 
-/* Object browser layout */
+[data-theme="dark"] .sidebar-icon-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Update badge — pulsing amber dot */
+.update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.update-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fa8c16;
+  animation: update-pulse 2.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes update-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ─── Object Browser ────────────────────────────────────────────────────────── */
+
 .browser-root {
   display: flex;
   flex-direction: column;
   height: 100vh;
   position: relative;
 }
+
+/* ─── Toolbar ───────────────────────────────────────────────────────────────── */
 
 .toolbar {
   padding: 10px 16px;
@@ -88,7 +235,22 @@ html, body {
   gap: 8px;
   flex-wrap: wrap;
   flex-shrink: 0;
+  min-height: 52px;
 }
+
+/* Subtle vertical divider for grouping toolbar zones */
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .toolbar-sep {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Table ─────────────────────────────────────────────────────────────────── */
 
 .transfer-progress-bar {
   padding: 6px 16px;
@@ -98,6 +260,29 @@ html, body {
   flex: 1;
   overflow: auto;
 }
+
+/* Uppercase column headers with tracking */
+.obj-table .ant-table-thead .ant-table-cell {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  opacity: 0.45 !important;
+}
+
+/* Row actions: hidden → visible on row hover */
+.obj-table .ant-table-row:hover .row-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.row-actions {
+  opacity: 0;
+  transform: translateX(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+/* ─── Empty / Loading States ────────────────────────────────────────────────── */
 
 .content-center {
   display: flex;
@@ -109,71 +294,138 @@ html, body {
   padding-top: 80px;
 }
 
+/* ─── Pagination Bar ────────────────────────────────────────────────────────── */
+
 .pagination-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 10px 16px;
   flex-shrink: 0;
 }
 
-/* Search result: directory badge */
+/* ─── Search Result Path Badges ─────────────────────────────────────────────── */
+
 .search-dir {
   display: inline-block;
-  padding: 0 6px;
-  margin-right: 4px;
-  font-size: 12px;
-  line-height: 20px;
+  padding: 0 5px;
+  margin-right: 2px;
+  font-size: 11px;
+  line-height: 19px;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(0, 0, 0, 0.38);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
 }
 .search-dir:hover {
-  background: rgba(0, 0, 0, 0.09);
+  background: rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.65);
 }
 [data-theme="dark"] .search-dir {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.38);
 }
 [data-theme="dark"] .search-dir:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.65);
 }
 
 .search-file {
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color 0.15s;
 }
 .search-file:hover {
   text-decoration: underline;
 }
 
-/* Object table row hover */
-.obj-table .ant-table-row:hover .row-actions {
-  opacity: 1;
-}
-.row-actions {
-  opacity: 0;
-  transition: opacity 0.15s;
-}
+/* ─── Drag & Drop Overlay ───────────────────────────────────────────────────── */
 
-/* Drag overlay */
 .drop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(22, 119, 255, 0.08);
-  border: 2px dashed #1677ff;
-  border-radius: 8px;
+  background: rgba(22, 119, 255, 0.04);
+  border: 2px dashed rgba(22, 119, 255, 0.45);
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  color: #1677ff;
-  font-weight: 500;
   z-index: 100;
   pointer-events: none;
+  animation: drop-in 0.14s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes drop-in {
+  from { opacity: 0; transform: scale(0.99); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  border-radius: 16px;
+  background: rgba(22, 119, 255, 0.07);
+  border: 1px solid rgba(22, 119, 255, 0.2);
+  backdrop-filter: blur(2px);
+}
+
+.drop-overlay-icon {
+  font-size: 32px;
+  color: #1677ff;
+  line-height: 1;
+}
+
+.drop-overlay-text {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1677ff;
+  letter-spacing: -0.01em;
+}
+
+.drop-overlay-hint {
+  font-size: 12px;
+  color: rgba(22, 119, 255, 0.6);
+  margin-top: -4px;
+}
+
+/* ─── Transfer Panel ────────────────────────────────────────────────────────── */
+
+.transfer-panel-card {
+  animation: panel-rise 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes panel-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.transfer-task-row {
+  display: flex;
+  flex-direction: column;
+  padding: 9px 0;
+}
+
+.transfer-task-row + .transfer-task-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .transfer-task-row + .transfer-task-row {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+/* FAB transfer button */
+.transfer-fab-btn {
+  transition: transform 0.14s ease, box-shadow 0.14s ease !important;
+}
+
+.transfer-fab-btn:hover {
+  transform: scale(1.07) !important;
+}
+
+.transfer-fab-btn:active {
+  transform: scale(0.95) !important;
 }

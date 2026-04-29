@@ -64,6 +64,7 @@ export function TransferPanel({
       {/* Expanded panel */}
       {expanded && (
         <div
+          className="transfer-panel-card"
           style={{
             width: 340,
             maxHeight: 480,
@@ -182,13 +183,14 @@ export function TransferPanel({
             type="primary"
             shape="circle"
             size="large"
+            className="transfer-fab-btn"
             icon={<SwapOutlined rotate={90} />}
             onClick={() => setExpanded((v) => !v)}
             style={{
               width: 44,
               height: 44,
               boxShadow: token.boxShadow,
-              opacity: activeCount > 0 ? 1 : 0.7,
+              opacity: activeCount > 0 ? 1 : 0.72,
             }}
           />
         </Badge>
@@ -211,7 +213,7 @@ interface TaskRowProps {
 function TaskRow({ icon, filename, progress, done, error, actions }: TaskRowProps) {
   const { token } = theme.useToken();
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div className="transfer-task-row">
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
         {icon}
         <Text

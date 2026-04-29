@@ -752,7 +752,15 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
       onDrop={onDrop}
     >
       {dragOver && (
-        <div className="drop-overlay">Drop files to upload</div>
+        <div className="drop-overlay">
+          <div className="drop-overlay-inner">
+            <div className="drop-overlay-icon">
+              <UploadOutlined />
+            </div>
+            <div className="drop-overlay-text">Drop to upload</div>
+            <div className="drop-overlay-hint">Files and folders are supported</div>
+          </div>
+        </div>
       )}
 
       {/* Toolbar */}

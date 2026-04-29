@@ -10,13 +10,13 @@ import {
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 import {
-  ArrowRightOutlined,
   DatabaseOutlined,
   InboxOutlined,
   LoadingOutlined,
   SettingOutlined,
   CloudServerOutlined,
   GithubOutlined,
+  ArrowRightOutlined,
 } from "@ant-design/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
@@ -75,8 +75,8 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
   const treeData: DataNode[] = accounts.map((acct) => ({
     key: `account::${acct.id}`,
     title: (
-      <span style={{ fontWeight: 600, fontSize: 13 }}>
-        <DatabaseOutlined style={{ marginRight: 6, color: token.colorPrimary }} />
+      <span style={{ fontWeight: 600, fontSize: 12.5, letterSpacing: "0.01em" }}>
+        <DatabaseOutlined style={{ marginRight: 6, color: token.colorPrimary, opacity: 0.8 }} />
         {acct.name}
       </span>
     ),
@@ -94,11 +94,18 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                fontSize: 12.5,
                 color: isSelected ? token.colorPrimary : undefined,
                 fontWeight: isSelected ? 600 : 400,
               }}
             >
-              <InboxOutlined style={{ marginRight: 6 }} />
+              <InboxOutlined
+                style={{
+                  marginRight: 6,
+                  opacity: isSelected ? 1 : 0.5,
+                  color: isSelected ? token.colorPrimary : undefined,
+                }}
+              />
               {b}
             </span>
           </Tooltip>
@@ -121,32 +128,36 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
     : [];
 
   return (
-    <div
-      className="sidebar-container"
-      style={{ background: token.colorBgContainer }}
-    >
-      {/* Header */}
-      <div
-        className="sidebar-header"
-        style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}
-      >
-        <Space size={6} align="center">
-          <CloudServerOutlined style={{ fontSize: 18, color: token.colorPrimary }} />
-          <Text strong style={{ fontSize: 15 }}>Super S3</Text>
-        </Space>
+    <div className="sidebar-container">
+      {/* ── Header ── */}
+      <div className="sidebar-header">
+        <div className="app-logo-wrap">
+          <div className="app-logo-icon">
+            <CloudServerOutlined />
+          </div>
+          <Text strong style={{ fontSize: 14, letterSpacing: "-0.01em" }}>
+            Super S3
+          </Text>
+        </div>
+
         <Tooltip title="Settings">
-          <SettingOutlined
+          <div
+            className="settings-btn"
             onClick={() => setSettingsOpen(true)}
-            style={{ cursor: "pointer", color: token.colorTextSecondary }}
-          />
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && setSettingsOpen(true)}
+          >
+            <SettingOutlined />
+          </div>
         </Tooltip>
       </div>
 
-      {/* Tree */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+      {/* ── Tree ── */}
+      <div className="sidebar-tree-wrap">
         {loading ? (
-          <div style={{ textAlign: "center", paddingTop: 32 }}>
-            <Spin indicator={<LoadingOutlined spin />} />
+          <div style={{ textAlign: "center", paddingTop: 36 }}>
+            <Spin indicator={<LoadingOutlined spin style={{ fontSize: 18, opacity: 0.4 }} />} />
           </div>
         ) : (
           <Tree
@@ -157,31 +168,33 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
             onExpand={(keys) => setExpandedKeys(keys as string[])}
             onSelect={handleSelect}
             blockNode
-            style={{ fontSize: 13 }}
+            style={{ fontSize: 12.5, background: "transparent" }}
           />
         )}
       </div>
 
-      {/* Footer */}
-      <div
-        className="sidebar-footer"
-        style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}
-      >
+      {/* ── Footer ── */}
+      <div className="sidebar-footer">
         {updateInfo ? (
-          <Tooltip title={`New version available: v${updateInfo.latestVersion}`}>
+          <Tooltip title={`v${updateInfo.latestVersion} available — click to open release`}>
             <a
               onClick={() => openUrl(updateInfo.releaseUrl)}
-              style={{ fontSize: 11, color: token.colorWarningText, cursor: "pointer" }}
+              className="update-badge"
+              style={{ cursor: "pointer", textDecoration: "none" }}
             >
-              v{__APP_VERSION__} <ArrowRightOutlined style={{ fontSize: 9 }} /> v{updateInfo.latestVersion}
+              <span className="update-dot" />
+              <Text style={{ fontSize: 11, color: token.colorWarningText }}>
+                v{__APP_VERSION__} → v{updateInfo.latestVersion}
+              </Text>
             </a>
           </Tooltip>
         ) : (
           <Text style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-            v{__APP_VERSION__} · jacksonary
+            v{__APP_VERSION__}
           </Text>
         )}
-        <Space size={8} align="center">
+
+        <Space size={4} align="center">
           <Tooltip title="GitHub">
             <a
               onClick={() => openUrl("https://github.com/Jacksonary/super-s3-app")}
@@ -198,7 +211,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
               style={{ color: token.colorTextQuaternary, cursor: "pointer" }}
             >
               <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
-                <path d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.016 0zm6.09 5.333c.328 0 .593.26.593.593v1.482a.594.594 0 0 1-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.26.593.593.593h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 0 0-.592-.593h-4.15a.592.592 0 0 1-.592-.592v-1.482a.593.593 0 0 1 .593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 0 1-4 4H5.926a.593.593 0 0 1-.593-.593V9.778a4.444 4.444 0 0 1 4.445-4.444h8.296Z"/>
+                <path d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.016 0zm6.09 5.333c.328 0 .593.26.593.593v1.482a.594.594 0 0 1-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.26.593.593.593h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 0 0-.592-.593h-4.15a.592.592 0 0 1-.592-.592v-1.482a.593.593 0 0 1 .593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 0 1-4 4H5.926a.593.593 0 0 1-.593-.593V9.778a4.444 4.444 0 0 1 4.445-4.444h8.296Z" />
               </svg>
             </a>
           </Tooltip>
