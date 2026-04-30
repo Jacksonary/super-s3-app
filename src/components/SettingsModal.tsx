@@ -311,7 +311,6 @@ function NavItem({
   onClick: () => void;
 }) {
   const { token } = theme.useToken();
-  const [hover, setHover] = useState(false);
 
   return (
     <div
@@ -319,8 +318,8 @@ function NavItem({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === "Enter" && onClick()}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      className="settings-nav-item"
+      data-active={active}
       style={{
         display: "flex",
         alignItems: "center",
@@ -332,11 +331,7 @@ function NavItem({
         fontSize: 13,
         fontWeight: active ? 600 : 400,
         color: active ? token.colorPrimary : token.colorText,
-        background: active
-          ? token.colorPrimaryBg
-          : hover
-          ? token.colorFillTertiary
-          : "transparent",
+        background: active ? token.colorPrimaryBg : "transparent",
         transition: "background 0.15s, color 0.15s",
         userSelect: "none",
       }}

@@ -16,7 +16,6 @@ import {
   SettingOutlined,
   CloudServerOutlined,
   GithubOutlined,
-  ArrowRightOutlined,
 } from "@ant-design/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
@@ -74,9 +73,20 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
 
   const treeData: DataNode[] = accounts.map((acct) => ({
     key: `account::${acct.id}`,
+    selectable: false,
     title: (
-      <span style={{ fontWeight: 600, fontSize: 12.5, letterSpacing: "0.01em" }}>
-        <DatabaseOutlined style={{ marginRight: 6, color: token.colorPrimary, opacity: 0.8 }} />
+      <span style={{
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.07em",
+        textTransform: "uppercase" as const,
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        paddingTop: 2,
+        opacity: 0.45,
+      }}>
+        <DatabaseOutlined />
         {acct.name}
       </span>
     ),
@@ -94,7 +104,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                fontSize: 12.5,
+                fontSize: 13,
                 color: isSelected ? token.colorPrimary : undefined,
                 fontWeight: isSelected ? 600 : 400,
               }}
@@ -146,6 +156,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
             onClick={() => setSettingsOpen(true)}
             role="button"
             tabIndex={0}
+            aria-label="Settings"
             onKeyDown={(e) => e.key === "Enter" && setSettingsOpen(true)}
           >
             <SettingOutlined />
@@ -157,7 +168,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
       <div className="sidebar-tree-wrap">
         {loading ? (
           <div style={{ textAlign: "center", paddingTop: 36 }}>
-            <Spin indicator={<LoadingOutlined spin style={{ fontSize: 18, opacity: 0.4 }} />} />
+            <Spin indicator={<LoadingOutlined spin style={{ fontSize: 18, opacity: 0.55 }} />} />
           </div>
         ) : (
           <Tree
@@ -168,7 +179,7 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
             onExpand={(keys) => setExpandedKeys(keys as string[])}
             onSelect={handleSelect}
             blockNode
-            style={{ fontSize: 12.5, background: "transparent" }}
+            style={{ fontSize: 13, background: "transparent" }}
           />
         )}
       </div>
@@ -179,7 +190,11 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
           <Tooltip title={`v${updateInfo.latestVersion} available — click to open release`}>
             <a
               onClick={() => openUrl(updateInfo.releaseUrl)}
+              onKeyDown={(e) => e.key === "Enter" && openUrl(updateInfo.releaseUrl)}
               className="update-badge"
+              role="link"
+              tabIndex={0}
+              aria-label={`Update available: v${__APP_VERSION__} → v${updateInfo.latestVersion}, click to view release`}
               style={{ cursor: "pointer", textDecoration: "none" }}
             >
               <span className="update-dot" />
@@ -198,7 +213,11 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
           <Tooltip title="GitHub">
             <a
               onClick={() => openUrl("https://github.com/Jacksonary/super-s3-app")}
+              onKeyDown={(e) => e.key === "Enter" && openUrl("https://github.com/Jacksonary/super-s3-app")}
               className="sidebar-icon-link"
+              role="link"
+              tabIndex={0}
+              aria-label="GitHub repository"
               style={{ color: token.colorTextQuaternary, cursor: "pointer" }}
             >
               <GithubOutlined />
@@ -207,7 +226,11 @@ export function Sidebar({ selected, onSelect, isDark, onThemeToggle, onTransferC
           <Tooltip title="Gitee">
             <a
               onClick={() => openUrl("https://gitee.com/weiguoliu/super-s3-app")}
+              onKeyDown={(e) => e.key === "Enter" && openUrl("https://gitee.com/weiguoliu/super-s3-app")}
               className="sidebar-icon-link"
+              role="link"
+              tabIndex={0}
+              aria-label="Gitee repository"
               style={{ color: token.colorTextQuaternary, cursor: "pointer" }}
             >
               <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">

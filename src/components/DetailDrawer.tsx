@@ -362,8 +362,16 @@ export function DetailDrawer({ open, target, item, onClose }: Props) {
           <Descriptions
             column={1}
             size="small"
-            bordered
-            labelStyle={{ width: 110, color: token.colorTextSecondary }}
+            layout="vertical"
+            labelStyle={{
+              color: token.colorTextSecondary,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              paddingBottom: 2,
+            }}
+            contentStyle={{ fontSize: 12, paddingBottom: 12 }}
           >
             <Descriptions.Item label="Filename">{filename}</Descriptions.Item>
             <Descriptions.Item label="Full Key">

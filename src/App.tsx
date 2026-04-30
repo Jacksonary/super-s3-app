@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Layout, theme, Typography, Empty, ConfigProvider } from "antd";
+import { Layout, theme, Typography, ConfigProvider } from "antd";
+import { CloudServerOutlined } from "@ant-design/icons";
 import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { ObjectBrowser } from "./components/ObjectBrowser";
@@ -112,15 +113,14 @@ function AppContent({ isDark, onThemeToggle }: AppContentProps) {
               uploadTaskCounter={uploadTaskCounter}
             />
           ) : (
-            <div className="content-center" style={{ height: "100vh" }}>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <Text type="secondary" style={{ fontSize: 13 }}>
-                    Select a bucket to start browsing
-                  </Text>
-                }
-              />
+            <div className="empty-state-wrap" style={{ height: "100vh", justifyContent: "center" }}>
+              <CloudServerOutlined className="empty-state-icon" />
+              <Text style={{ fontSize: 15, fontWeight: 600 }}>
+                No bucket selected
+              </Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Choose a bucket from the sidebar to start browsing
+              </Text>
             </div>
           )}
         </Content>
@@ -149,14 +149,17 @@ export default function App() {
   };
 
   useEffect(() => {
-    document.documentElement.style.background = isDark ? "#141414" : "#ffffff";
-    document.body.style.background = isDark ? "#141414" : "#ffffff";
+    document.documentElement.style.background = isDark ? "#111213" : "#f0f2f5";
+    document.body.style.background = isDark ? "#111213" : "#f0f2f5";
   }, [isDark]);
 
   return (
     <div data-theme={isDark ? "dark" : "light"}>
       <ConfigProvider
-        theme={{ algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm }}
+        theme={{
+          algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+          token: isDark ? { colorBgLayout: "#111213" } : { colorBgLayout: "#f0f2f5" },
+        }}
       >
         <AppContent isDark={isDark} onThemeToggle={toggleTheme} />
       </ConfigProvider>

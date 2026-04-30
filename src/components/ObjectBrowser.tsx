@@ -10,7 +10,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
   Progress,
   Tag,
   Typography,
-  Empty,
   Spin,
   Modal,
   Form,
@@ -38,6 +37,7 @@ import {
   HomeOutlined,
   LeftOutlined,
   RightOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import { save, open, ask } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -580,7 +580,7 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
         if (row.type === "folder") {
           return (
             <Space size={6}>
-              <FolderOutlined style={{ color: "#faad14", fontSize: 16 }} />
+              <FolderOutlined style={{ color: token.colorWarning, fontSize: 16 }} />
               <a
                 onClick={() => navigate(row.key)}
                 style={{ fontWeight: 500, color: token.colorText }}
@@ -660,7 +660,9 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
           <Tag color="blue" style={{ fontSize: 11 }}>
             {cls}
           </Tag>
-        ) : null,
+        ) : (
+          <span style={{ color: token.colorTextQuaternary, fontSize: 12 }}>—</span>
+        ),
     },
     {
       title: "",
@@ -776,13 +778,23 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
           items={[
             {
               title: (
-                <a onClick={() => navigate("")}>
+                <a
+                  onClick={() => navigate("")}
+                  onKeyDown={(e) => e.key === "Enter" && navigate("")}
+                >
                   <HomeOutlined /> {bucket}
                 </a>
               ),
             },
             ...segments.map((seg) => ({
-              title: <a onClick={() => navigate(seg.prefix)}>{seg.label}</a>,
+              title: (
+                <a
+                  onClick={() => navigate(seg.prefix)}
+                  onKeyDown={(e) => e.key === "Enter" && navigate(seg.prefix)}
+                >
+                  {seg.label}
+                </a>
+              ),
             })),
           ]}
         />
@@ -806,6 +818,8 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
           prefix={<SearchOutlined />}
           enterButton
         />
+
+        <div className="toolbar-sep" />
 
         <Space>
           <Dropdown
@@ -886,10 +900,13 @@ export function ObjectBrowser({ target, transferConfig, uploads, downloads, setU
             }}
             locale={{
               emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="No objects"
-                />
+                <div className="empty-state-wrap" style={{ padding: "40px 0" }}>
+                  <InboxOutlined className="empty-state-icon" />
+                  <Text style={{ fontSize: 14, fontWeight: 600 }}>This folder is empty</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Upload files or drop them anywhere in this area
+                  </Text>
+                </div>
               ),
             }}
             scroll={{ x: "max-content" }}
